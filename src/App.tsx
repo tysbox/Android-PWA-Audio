@@ -902,11 +902,20 @@ export const App: React.FC = () => {
       input.type = 'file';
       input.multiple = true;
       input.accept = 'audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg,.dsf,.dff,.opus';
+      // Ensure input is in DOM for reliable onchange firing
+      input.style.display = 'none';
+      document.body.appendChild(input);
       input.onchange = async (e: any) => {
+        // === SYNC DEBUG: fires immediately when files selected ===
+        console.log('[App] browseLocal onchange FIRED');
+        alert('onchange fired! Selected ' + (e.target?.files?.length || 0) + ' files');
+
         try {
           const selectedFiles: File[] = Array.from(e.target?.files || []);
+          console.log('[App] selectedFiles.length =', selectedFiles.length);
           if (selectedFiles.length === 0) {
-            alert('ファイルが選択されませんでした。');
+            alert('ファイルが選択されませんでした（length=0）。');
+            document.body.removeChild(input);
             return;
           }
 
@@ -979,6 +988,9 @@ export const App: React.FC = () => {
         } catch (err) {
           console.error('[App] browseLocal error:', err);
           alert(`ファイル処理エラー: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          // Clean up input element
+          if (input.parentNode) document.body.removeChild(input);
         }
       };
       input.click();
