@@ -609,7 +609,10 @@ export class WebAudioEngine {
     }
   }
 
-  /** Search MusicBrainz for a recording */
+  /** Shared User-Agent — Wikipedia/MusicBrainz may reject empty/none. */
+  private static readonly UA = 'BiscenePWA/1.0 (https://github.com/tysbox/Android-PWA-Audio)';
+
+  /** Search MusicBrainz for a recording (with artist-credit so artistName is available) */
   private async searchMusicBrainzRecording(artist: string, title: string, album?: string): Promise<any> {
     try {
       // Clean up title: remove track number prefix (e.g., "01. ", "02. ")
@@ -633,9 +636,9 @@ export class WebAudioEngine {
       }
 
       const query = parts.join(' AND ');
-      const url = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=1`;
+      const url = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=1&inc=artist-credits+releases`;
       console.log('[WebAudioEngine] searchMusicBrainzRecording: URL=', url);
-      const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0 (https://github.com/tysbox/Android-PWA-Audio)' } });
+      const resp = await fetch(url, { headers: { 'User-Agent': WebAudioEngine.UA } });
       console.log('[WebAudioEngine] searchMusicBrainzRecording: resp.ok=', resp.ok, 'status=', resp.status);
       if (!resp.ok) return null;
       const data = await resp.json();
@@ -647,13 +650,13 @@ export class WebAudioEngine {
     }
   }
 
-  /** Fetch MusicBrainz release info */
+  /** Fetch MusicBrainz release info — VALID inc params only (annotations is NOT valid for release) */
   private async fetchMusicBrainzRelease(releaseId: string): Promise<any> {
     try {
-      const url = `https://musicbrainz.org/ws/2/release/${releaseId}?fmt=json&inc=annotations+relations+labels`;
+      const url = `https://musicbrainz.org/ws/2/release/${releaseId}?fmt=json&inc=labels+media+artist-credits+recordings+artist-rels+url-rels`;
       console.log('[WebAudioEngine] fetchMusicBrainzRelease: URL=', url);
-      const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0' } });
-      console.log('[WebAudioEngine] fetchMusicBrainzRelease: resp.ok=', resp.ok);
+      const resp = await fetch(url, { headers: { 'User-Agent': WebAudioEngine.UA } });
+      console.log('[WebAudioEngine] fetchMusicBrainzRelease: resp.ok=', resp.ok, 'status=', resp.status);
       if (!resp.ok) return null;
       return await resp.json();
     } catch (e) {
@@ -662,13 +665,13 @@ export class WebAudioEngine {
     }
   }
 
-  /** Fetch MusicBrainz artist info */
+  /** Fetch MusicBrainz artist info — artist-rels for lifeDates, url-rels for officialSite */
   private async fetchMusicBrainzArtist(artistId: string): Promise<any> {
     try {
-      const url = `https://musicbrainz.org/ws/2/artist/${artistId}?fmt=json&inc=aliases+tags+ratings`;
+      const url = `https://musicbrainz.org/ws/2/artist/${artistId}?fmt=json&inc=aliases+tags+ratings+artist-rels+url-rels`;
       console.log('[WebAudioEngine] fetchMusicBrainzArtist: URL=', url);
-      const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0' } });
-      console.log('[WebAudioEngine] fetchMusicBrainzArtist: resp.ok=', resp.ok);
+      const resp = await fetch(url, { headers: { 'User-Agent': WebAudioEngine.UA } });
+      console.log('[WebAudioEngine] fetchMusicBrainzArtist: resp.ok=', resp.ok, 'status=', resp.status);
       if (!resp.ok) return null;
       return await resp.json();
     } catch (e) {
