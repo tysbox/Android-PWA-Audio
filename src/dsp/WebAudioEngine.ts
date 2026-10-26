@@ -533,25 +533,76 @@ export class WebAudioEngine {
       ]);
       console.log('[WebAudioEngine] fetchWiki: parallel results:', { releaseInfo: !!releaseInfo, artistInfo: !!artistInfo, wikiSummary: !!wikiSummary, wikiTracklist: !!wikiTracklist });
 
-      // 3. Build credits object matching native format
+      // 3. Build credits object — MUST match native Android format exactly.
+      // Native returns the credits object DIRECTLY (resp.credits), and
+      // WikiModal reads flat keys: producers/engineers/composers/performers
+      // (plural, lowercase), artistName/artistBio, wikiSummary, etc.
       const credits: any = {};
 
-      if (wikiSummary) credits.wikiSummary = wikiSummary;
-      if (artistInfo?.bio) credits.artistBio = artistInfo.bio;
-      if (releaseInfo?.disambiguation) credits.albumDisambiguation = releaseInfo.disambiguation;
-      if (releaseInfo?.['annotation']) credits.albumAnnotation = releaseInfo.annotation;
-      if (wikiTracklist) credits.tracklist = wikiTracklist;
+      // Identity from MusicBrainz (recording-level)
+      if (recording.title) credits.trackTitle = recording.title;
+      if (recording['artist-credit']?.[0]?.artist?.name) {
+        credits.artistName = recording['artist-credit'][0].artist.name;
+      }
+      if (recording.length) credits.trackLengthMs = recording.length;
 
-      // Production credits from MusicBrainz relationships
-      if (releaseInfo?.relations) {
-        const prodCredits = this.extractProductionCredits(releaseInfo.relations);
-        if (Object.keys(prodCredits).length > 0) {
-          credits.productionCredits = prodCredits;
+      // Wiki data
+      if (wikiSummary) credits.wikiSummary = wikiSummary;
+      if (artistInfo) {
+        // MusicBrainz artist detail: use 'disambiguation', biography comes from Wikipedia
+        if (artistInfo.disambiguation) credits.artistDisambiguation = artistInfo.disambiguation;
+        const artistWikiBio = await this.fetchWikipediaSummary(
+          recording['artist-credit']?.[0]?.artist?.name || artist, '', ''
+        );
+        if (artistWikiBio) credits.artistBio = artistWikiBio;
+        if (artistInfo.country) credits.artistCountry = artistInfo.country;
+        if (artistInfo['life-span']?.begin) credits.lifeDates = artistInfo['life-span'].begin;
+        if (artistInfo['life-span']?.end) credits.lifeDates += (credits.lifeDates ? ' – ' : '') + artistInfo['life-span'].end;
+        if (artistInfo.officialSite) credits.officialSite = artistInfo.officialSite;
+      }
+
+      // Release-level facts
+      if (releaseInfo) {
+        if (releaseInfo.title) credits.albumTitle = releaseInfo.title;
+        if (releaseInfo.date) {
+          credits.releaseDate = releaseInfo.date;
+          credits.firstReleaseYear = releaseInfo.date.substring(0, 4);
         }
+        if (releaseInfo.country) credits.releaseCountry = releaseInfo.country;
+        if (releaseInfo.status) credits.releaseMedium = releaseInfo.status;
+        if (releaseInfo['label-info']?.[0]?.label?.name) {
+          credits.label = releaseInfo['label-info'][0].label.name;
+        }
+        if (releaseInfo['catalog-number'] || releaseInfo['label-info']?.[0]?.['catalog-number']) {
+          credits.catalogNumber = releaseInfo['label-info']?.[0]?.['catalog-number'] || '';
+        }
+        if (releaseInfo.media?.[0]?.format) credits.releaseMedium = releaseInfo.media[0].format;
+        if (releaseInfo.disambiguation) credits.albumDisambiguation = releaseInfo.disambiguation;
+      }
+
+      // Tracklist from release media
+      const releaseTracks: string[] = [];
+      if (releaseInfo?.media) {
+        for (const medium of releaseInfo.media) {
+          for (const track of medium.tracks || []) {
+            const t = track.title || '';
+            if (t) releaseTracks.push(`${track.position || ''} ${t}`.trim());
+          }
+        }
+      }
+      if (releaseTracks.length > 0) credits.tracklist = releaseTracks.join(', ');
+
+      // Production credits from MusicBrainz relationships — native key format:
+      // producers / engineers / performers (with role in parens) / composers
+      if (releaseInfo?.relations) {
+        this.parseRelationsNative(releaseInfo.relations, credits);
+      }
+      if (recording.relations) {
+        this.parseRelationsNative(recording.relations, credits);
       }
 
       console.log('[WebAudioEngine] fetchWiki: final credits keys:', Object.keys(credits));
-      return { credits };
+      return credits;
     } catch (e) {
       console.error('[WebAudioEngine] fetchWiki error:', e);
       return null;
@@ -676,38 +727,38 @@ export class WebAudioEngine {
     }
   }
 
-  /** Extract production credits from MusicBrainz relationships */
-  private extractProductionCredits(relations: any[]): Record<string, string> {
-    const credits: Record<string, string> = {};
-    const roleMap: Record<string, string> = {
-      producer: 'Producer',
-      engineer: 'Engineer',
-      mixer: 'Mixing Engineer',
-      mastering: 'Mastering Engineer',
-      songwriter: 'Songwriter',
-      composer: 'Composer',
-      lyricist: 'Lyricist',
-      vocalist: 'Vocals',
-      instrumentalist: 'Instrument',
-      arranger: 'Arranger',
-      'recording engineer': 'Recording Engineer',
-      'mixing engineer': 'Mixing Engineer',
-      'mastering engineer': 'Mastering Engineer',
-    };
+  /** Extract production credits — native Android MetadataParser.parseRelations format:
+   *  producers / engineers / studios / performers (name (role)) / composers,
+   *  comma-separated with dedup. */
+  private parseRelationsNative(relations: any[], credits: Record<string, string>): void {
+    for (const rel of relations || []) {
+      const type = rel.type?.toLowerCase() || '';
+      const name = rel.artist?.name;
+      if (!type || !name) continue;
 
-    for (const rel of relations) {
-      const type = rel.type?.toLowerCase();
-      const artist = rel.artist?.name;
-      if (!type || !artist) continue;
-
-      const role = roleMap[type] || type;
-      if (credits[role]) {
-        credits[role] += ', ' + artist;
-      } else {
-        credits[role] = artist;
+      if (type.includes('producer')) {
+        this.addCredit('producers', name, credits);
+      } else if (type.includes('engineer') || type.includes('mix') || type.includes('mastering')) {
+        this.addCredit('engineers', name, credits);
+      } else if (type.includes('studio') || type.includes('recorded at')) {
+        this.addCredit('studios', name, credits);
+      } else if (type.includes('performer') || type.includes('instrument') || type.includes('vocal')) {
+        const attrs = rel.attributes || [];
+        const role = attrs.length > 0 ? ` (${attrs[0]})` : ` (${type})`;
+        this.addCredit('performers', name + role, credits);
+      } else if (type.includes('writer') || type.includes('composer') || type.includes('lyricist')) {
+        this.addCredit('composers', name, credits);
       }
     }
-    return credits;
+  }
+
+  /** Add a credit with native-style dedup (name containment check). */
+  private addCredit(category: string, name: string, credits: Record<string, string>): void {
+    if (!name || !credits) return;
+    const existing = credits[category] || '';
+    const bareName = name.replace(/\s*\(.*?\)/g, '').trim().toLowerCase();
+    if (existing.toLowerCase().includes(bareName)) return;
+    credits[category] = existing ? existing + ', ' + name : name;
   }
 
   updateDspParams(params: {
