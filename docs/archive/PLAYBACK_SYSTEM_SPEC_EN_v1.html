@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Biscene DSPSystem - Playback Engine Specification</title>
+<style>
+:root {
+    --primary: #2c3e50;
+    --secondary: #34495e;
+    --accent: #3498db;
+    --accent-dark: #2980b9;
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --text: #2c2c2c;
+    --text-muted: #666;
+    --border: #e0e0e0;
+    --code-bg: #f4f4f4;
+    --table-header: #2c3e50;
+    --table-header-text: #fff;
+    --ok: #27ae60;
+    --ng: #e74c3c;
+    --warn: #f39c12;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+    line-height: 1.7;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px;
+}
+h1, h2, h3, h4 { color: var(--primary); font-weight: 600; line-height: 1.3; }
+h1 { font-size: 2.2rem; border-bottom: 3px solid var(--accent); padding-bottom: 12px; margin-bottom: 24px; }
+h2 { font-size: 1.6rem; margin-top: 40px; margin-bottom: 16px; padding-left: 12px; border-left: 4px solid var(--accent); }
+h3 { font-size: 1.3rem; margin-top: 28px; margin-bottom: 12px; }
+h4 { font-size: 1.1rem; margin-top: 20px; margin-bottom: 10px; color: var(--secondary); }
+p { margin-bottom: 16px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+}
+pre {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.token.comment { color: #6272a4; }
+.token.keyword { color: #ff79c6; }
+.token.function { color: #50fa7b; }
+.token.string { color: #f1fa8c; }
+.token.number { color: #bd93f9; }
+.token.operator { color: #ff79c6; }
+.token.punctuation { color: #f8f8f2; }
+ul, ol { margin: 12px 0 16px 24px; }
+li { margin-bottom: 6px; }
+li > ul, li > ol { margin-top: 6px; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background: var(--card-bg);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-radius: 8px;
+    overflow: hidden;
+}
+th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+th {
+    background: var(--table-header);
+    color: var(--table-header-text);
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) td { background: #fafafa; }
+tr:hover td { background: #f0f7ff; }
+.diagram {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 16px;
+    border-radius: 8px;
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 16px 0;
+    white-space: pre;
+}
+hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+blockquote {
+    border-left: 4px solid var(--accent);
+    padding: 12px 20px;
+    margin: 16px 0;
+    background: #f0f7ff;
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+    color: var(--secondary);
+}
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.badge-ok { background: #e8f8f0; color: var(--ok); }
+.badge-ng { background: #fdf0f0; color: var(--ng); }
+.badge-warn { background: #fef9e7; color: var(--warn); }
+.badge-partial { background: #fef5e7; color: #e67e22; }
+.section-meta {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+.toc {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 32px;
+}
+.toc h2 { margin-top: 0; font-size: 1.2rem; border: none; padding: 0; }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 6px 0; }
+.toc a { color: var(--secondary); }
+.toc a:hover { color: var(--accent); }
+.toc ul ul { margin-left: 20px; font-size: 0.9rem; color: var(--text-muted); }
+.arch-diagram {
+    background: linear-gradient(135deg, #f8f9fa 0%, #eef2f5 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+}
+@media print {
+    body { background: white; padding: 0; max-width: none; }
+    h1, h2, h3, h4 { break-after: avoid; }
+    table { break-inside: auto; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    pre, .diagram { break-inside: avoid; }
+    .toc { display: none; }
+    .no-print { display: none; }
+}
+.footer-note { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<nav class="toc no-print">
+<h2>📑 Table of Contents</h2>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#architecture">Architecture Overview</a></li>
+<li><a href="#core-features">Core Differentiating Features</a>
+<ul>
+<li><a href="#bitperfect">1. Bit-Perfect Hi-Res Playback</a></li>
+<li><a href="#dsp-pipeline">2. 96kHz Float32 Fixed-Rate DSP Pipeline</a></li>
+<li><a href="#session-isolation">3. Session-Isolated Gapless Transition</a></li>
+<li><a href="#background-resilience">4. Full Background/Sleep/Doze Resilience</a></li>
+<li><a href="#dsf-native">5. DSF (DSD) Native Streaming Decode</a></li>
+<li><a href="#saf-native">6. SAF Native File Playback</a></li>
+</ul>
+</li>
+<li><a href="#specs">Technical Specifications</a></li>
+<li><a href="#advantages">Competitive Advantages</a></li>
+<li><a href="#limitations">Known Limitations & Future Roadmap</a></li>
+<li><a href="#requirements">Build & Runtime Requirements</a></li>
+<li><a href="#license">License & Credits</a></li>
+</ul>
+</nav>
+
+<h1 id="overview">Biscene DSPSystem - Playback Engine Specification</h1>
+
+<h2 id="architecture">Architecture Overview</h2>
+
+<div class="arch-diagram">┌─────────────────────────────────────────────────────────────────┐
+│  Web Layer (React/TypeScript)                                    │
+│  ├─ PlayerControls, AudioEngine.ts, LocalBrowserModal...        │
+│  └─ Capacitor Bridge (DlnaPlayback Plugin)                      │
+├─────────────────────────────────────────────────────────────────┤
+│  Native Layer (Kotlin/Java)                                      │
+│  ├─ DlnaPlaybackPlugin (Capacitor Plugin)                       │
+│  │   ├─ LocalPcmServer (HTTP/127.0.0.1:9600)                    │
+│  │   └─ DecodingThread (per-session)                            │
+│  │       ├─ MediaCodec Path (FLAC/WAV/MP3/AAC/ALAC...)          │
+│  │       └─ DsfDecoder Path (DSD/DSF)                           │
+│  ├─ DSP Pipeline (96kHz Float32 Fixed-Rate)                     │
+│  │   ├─ RateConverter (Catmull-Rom, stereo interleaved)         │
+│  │   └─ NativeDspChain (Biquad EQ, Crossfeed, Freeverb, Tube)  │
+│  ├─ AudioTrack (96kHz/Float32/Stereo, MODE_STREAM)              │
+│  └─ PlaybackService (Foreground Service)                        │
+│       ├─ PARTIAL_WAKE_LOCK (CPU alive)                          │
+│       └─ WIFI_MODE_FULL_HIGH_PERF (Network alive)               │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+<h2 id="core-features">Core Differentiating Features</h2>
+
+<h3 id="bitperfect">1. Bit-Perfect Hi-Res Playback (All Formats)</h3>
+
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Decoder Output</th>
+<th>Internal Processing</th>
+<th>Output</th>
+<th>Bit-Perfect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FLAC/WAV 16bit</td>
+<td>PCM_16BIT</td>
+<td>→ Float32 normalization</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span></td>
+</tr>
+<tr>
+<td>FLAC/WAV 24bit</td>
+<td>PCM_32BIT (Right-aligned 24bit)</td>
+<td><strong>Auto alignment detect → normalize</strong></td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span> <strong>Industry-first equivalent</strong></td>
+</tr>
+<tr>
+<td>FLAC/WAV 32bit</td>
+<td>PCM_32BIT / Float32</td>
+<td>Pass-through</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span></td>
+</tr>
+<tr>
+<td>DSF (DSD64/128)</td>
+<td>DSD→PCM (Boxcar decimation)</td>
+<td>96kHz resample</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-partial">~</span> Unavoidable at DSD→PCM</td>
+</tr>
+<tr>
+<td>MP3/AAC/OPUS...</td>
+<td>PCM_16BIT</td>
+<td>→ Float32 normalization</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span> (Lossless equivalent)</td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>Technical Highlights</strong>:</p>
+<ul>
+<li><code>convertToFloat32Array()</code> with <strong>runtime 24-bit alignment auto-detection</strong> (sign-extension heuristic)</li>
+<li>Independent of <code>srcBits</code> hint, handles both Right-aligned and Left-aligned</li>
+<li>Float sanity gate for <strong>automatic detection/fallback of vendor decoder Float output bugs</strong></li>
+</ul>
+
+<h3 id="dsp-pipeline">2. 96kHz Float32 Fixed-Rate DSP Pipeline (CamillaDSP-style)</h3>
+
+<div class="diagram">Input (any rate) → RateConverter (Catmull-Rom) → 96kHz Float32
+                                                     ↓
+                                              ┌────┴────┐
+                                              │ NativeDspChain │
+                                              ├──────────────┤
+                                              │ Preamp        │
+                                              │ Hum Filter (50/60Hz) │
+                                              │ Source EQ (Parametric) │
+                                              │ Output EQ (Parametric) │
+                                              │ Calibration Biquads │
+                                              │ Crossfeed (Meier) │
+                                              │ Tube Saturation │
+                                              │ Ambience (Freeverb + IR) │
+                                              │ Soft-knee Limiter │
+                                              └──────────────┘
+                                                     ↓
+                                          AudioTrack (96kHz Float32)</div>
+
+<p><strong>Features</strong>:</p>
+<ul>
+<li><strong>Single-rate processing</strong>: All effects run at 96kHz, minimizing resampling artifacts</li>
+<li><strong>Real-time parameter updates</strong>: <code>updateDsp()</code> recalculates coefficients while preserving filter states</li>
+<li><strong>IR-based Ambience</strong>: Bundled WAV IRs (Hall, Jazz Club, Large Hall) resampled at runtime</li>
+<li><strong>Safe clipping</strong>: Soft-knee (-0.92dBFS) prevents distortion</li>
+</ul>
+
+<h3 id="session-isolation">3. Session-Isolated Gapless Transition (SID-based)</h3>
+
+<pre><code>// Unique Session ID assigned per playback
+private static final AtomicInteger SESSION_SEQ = new AtomicInteger(0);
+public final int sid = SESSION_SEQ.incrementAndGet();</code></pre>
+
+<ul>
+<li><strong>Web side discards stale SID events</strong> → Eliminates race conditions causing "unresponsive controls" or "previous track position persists"</li>
+<li><strong>Track switch</strong>: Old thread stops immediately (<code>haltTrackImmediate()</code> → <code>release()</code>) → New thread starts</li>
+<li><strong>AudioTrack recreation</strong>: <code>release()</code> reliably unblocks blocked writes, works around Huawei HAL bugs</li>
+</ul>
+
+<h3 id="background-resilience">4. Full Background/Sleep/Doze Resilience</h3>
+
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU Sleep Prevention</td>
+<td><code>PARTIAL_WAKE_LOCK</code> (1-hour fail-safe)</td>
+</tr>
+<tr>
+<td>Wi-Fi Sleep Prevention</td>
+<td><code>WIFI_MODE_FULL_HIGH_PERF</code> (Android 10+)</td>
+</tr>
+<tr>
+<td>Process Priority</td>
+<td><code>FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK</code></td>
+</tr>
+<tr>
+<td>Auto-start</td>
+<td><code>ContextCompat.startForegroundService()</code> on <code>play()</code></td>
+</tr>
+<tr>
+<td>Notification</td>
+<td>Ongoing playback display (Silent, Low Priority)</td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>Result</strong>: <strong>All formats play uninterrupted</strong> under screen-off, pocket mode, battery saver, and Doze mode.</p>
+
+<h3 id="dsf-native">5. DSF (DSD) Native Streaming Decode</h3>
+
+<ul>
+<li><strong>No MediaCodec</strong>: DSD unsupported by codecs, custom implementation</li>
+<li><strong>Streaming Parse</strong>: After 92B header, block-wise decimation</li>
+<li><strong>Retry Mechanism</strong>: Handles NAS (Soundgenic etc.) post-burst connection refusal (3× exponential backoff)</li>
+<li><strong>Boxcar Decimation</strong>: Auto-selects max power-of-2 R=32/64/128... yielding ≥88.2kHz</li>
+<li><strong>Unified Pipeline</strong>: Decimated → 96kHz resample → Common DSP → AudioTrack</li>
+</ul>
+
+<h3 id="saf-native">6. SAF (Storage Access Framework) Native File Playback</h3>
+
+<ul>
+<li>Permission-free local folder selection via system picker</li>
+<li>Recursive scan for all tracks (DSF/DFF/FLAC/WAV/MP3/ALAC/APE/WV etc.)</li>
+<li><code>contentfile</code> endpoint supports <strong>Range Request / Partial Content</strong> → Fast seeking</li>
+<li>Album Art: Multi-stage fallback (ID3v2/FLAC Picture/MP4 covr/DSF tail/Folder images)</li>
+</ul>
+
+<h2 id="specs">Technical Specifications</h2>
+
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Specification</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Internal Sample Rate</td><td>96,000 Hz (Fixed)</td></tr>
+<tr><td>Internal Bit Depth</td><td>32-bit Float (IEEE 754)</td></tr>
+<tr><td>Channels</td><td>Stereo fixed (Mono input duplicated)</td></tr>
+<tr><td>Resampler</td><td>Catmull-Rom Spline (4-point, fractional phase continuous)</td></tr>
+<tr><td>DSP Precision</td><td>Single-precision float (No SIMD, portability first)</td></tr>
+<tr><td>AudioTrack Mode</td><td><code>MODE_STREAM</code> / <code>WRITE_BLOCKING</code></td></tr>
+<tr><td>Buffer Size</td><td><code>max(minBuf × 4, 256KB)</code></td></tr>
+<tr><td>Decode Queue</td><td><code>LinkedBlockingQueue<byte[]>(200)</code></td></tr>
+<tr><td>Position Notify</td><td>Direct: 2Hz (Actual written frames) / Proxy: 1Hz (PTS-based)</td></tr>
+<tr><td>Seek Precision</td><td>Sample-accurate (MediaExtractor <code>SEEK_TO_PREVIOUS_SYNC</code>)</td></tr>
+</tbody>
+</table>
+
+<h2 id="advantages">Competitive Advantages (vs. Other Apps)</h2>
+
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Typical Apps</th>
+<th>Biscene DSPSystem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>24-bit True Bit Depth</td>
+<td><span class="badge badge-ng">NG</span> (Downconvert to 16-bit or noise)</td>
+<td><span class="badge badge-ok">OK</span> Auto alignment detection</td>
+</tr>
+<tr>
+<td>96kHz Fixed DSP</td>
+<td><span class="badge badge-ng">NG</span> (Input rate or 44.1/48kHz)</td>
+<td><span class="badge badge-ok">OK</span> All effects at 96kHz</td>
+</tr>
+<tr>
+<td>DSD Native Playback</td>
+<td><span class="badge badge-ng">NG</span> (PCM convert only / unsupported)</td>
+<td><span class="badge badge-ok">OK</span> Streaming DSF direct decode</td>
+</tr>
+<tr>
+<td>Background Resilience</td>
+<td><span class="badge badge-warn">Partial</span> (No/incomplete WakeLock)</td>
+<td><span class="badge badge-ok">OK</span> Foreground Service + Dual Locks</td>
+</tr>
+<tr>
+<td>Gapless/Silent Switch</td>
+<td><span class="badge badge-ng">NG</span> (Noise/gaps occur)</td>
+<td><span class="badge badge-ok">OK</span> SID Isolation + AudioTrack Recreate</td>
+</tr>
+<tr>
+<td>Real-time DSP</td>
+<td><span class="badge badge-warn">Partial</span> (Presets only / Restart required)</td>
+<td><span class="badge badge-ok">OK</span> Live Parameter Updates</td>
+</tr>
+<tr>
+<td>Local/NAS Unification</td>
+<td><span class="badge badge-ng">NG</span> (Separate apps / Limited)</td>
+<td><span class="badge badge-ok">OK</span> SAF + DLNA/UPnP Unified UI</td>
+</tr>
+<tr>
+<td>Openness/Extensibility</td>
+<td><span class="badge badge-ng">NG</span> (Closed)</td>
+<td><span class="badge badge-ok">OK</span> Full Control via Capacitor Bridge</td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="limitations">Known Limitations & Future Roadmap</h2>
+
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Current</th>
+<th>Planned</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Multi-channel</td><td>Stereo only</td><td>5.1/7.1 Support (AudioTrack <code>CHANNEL_OUT_5POINT1</code>)</td></tr>
+<tr><td>DSD256/512</td><td>DSD64/128 only</td><td>Higher DSD (Decimation Ratio Extension)</td></tr>
+<tr><td>MQA</td><td>Unsupported</td><td>MQA Core Decoder Integration</td></tr>
+<tr><td>EQ Presets</td><td>Manual JSON</td><td>Preset Library / Import/Export</td></tr>
+<tr><td>Measurement Correction</td><td>Manual Calibration</td><td>Room EQ Wizard / Auto Measurement</td></tr>
+<tr><td>Network Protocols</td><td>HTTP/HTTPS/DLNA</td><td>WebDAV, SMB, NFS, Roon RAAT</td></tr>
+</tbody>
+</table>
+
+<h2 id="requirements">Build & Runtime Requirements</h2>
+
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Android</td><td>API 24+ (Android 7.0), Recommended API 29+ (Android 10)</td></tr>
+<tr><td>NDK</td><td>r25+ (Unused if NativeDspChain not used)</td></tr>
+<tr><td>Kotlin</td><td>1.9+</td></tr>
+<tr><td>Gradle</td><td>8.5+</td></tr>
+<tr><td>Capacitor</td><td>6.x</td></tr>
+<tr><td>Permissions</td><td><code>INTERNET</code>, <code>ACCESS_NETWORK_STATE</code>, <code>ACCESS_WIFI_STATE</code>, <code>WAKE_LOCK</code>, <code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_MEDIA_PLAYBACK</code>, <code>POST_NOTIFICATIONS</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="license">License & Credits</h2>
+
+<ul>
+<li><strong>Original Implementation</strong>: DSP Chain, RateConverter, DSF Decoder, Session Management</li>
+<li><strong>References</strong>: CamillaDSP (Architecture), Freeverb (Reverb), Android MediaCodec API Guides</li>
+<li><strong>OSS Dependencies</strong>: None (All native code is original, Java/Kotlin Standard APIs only)</li>
+</ul>
+
+<div class="section-meta">
+<p><strong>Specification Version:</strong> 1.0 (2026-08-28)<br>
+<strong>Corresponding Commits:</strong> <code>152e4fc</code> (Foreground Service) + <code>15ba25e</code> (24bit Fix)</p>
+</div>
+
+<div class="footer-note no-print">
+<p>This document is viewable in browser and printable (Save as PDF).<br>
+When printing, enable "Background graphics" for best results.</p>
+</div>
+
+<script>
+// Smooth scroll for TOC links
+document.querySelectorAll('.toc a').forEach(a => {
+    a.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector(a.getAttribute('href')).scrollIntoView({behavior: 'smooth'});
+    });
+});
+</script>
+</body>
+</html>

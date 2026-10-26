@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Biscene DSPSystem V4 - 技術仕様 ＆ 機能詳細</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 50px 20px; background: #f8f9fa; }
+        header { text-align: center; margin-bottom: 50px; }
+        h1 { color: #1a1a1a; font-size: 2.5em; margin-bottom: 10px; }
+        .version-badge { background: #00bcd4; color: white; padding: 5px 15px; border-radius: 50px; font-size: 0.4em; vertical-align: middle; }
+        section { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); margin-bottom: 30px; }
+        h2 { color: #00bcd4; border-left: 5px solid #00bcd4; padding-left: 15px; margin-bottom: 20px; text-transform: uppercase; }
+        ul { padding-left: 20px; }
+        li { margin-bottom: 10px; }
+        strong { color: #1a1a1a; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V4 Functional</span></h1>
+        <p>次世代ネイティブ・オーディオ・エンジンの極致</p>
+    </header>
+
+    <section>
+        <h2>🚀 コア・ネイティブNDKエンジン</h2>
+        <p>ARMアーキテクチャに最適化された超高性能オーディオ基盤。</p>
+        <ul>
+            <li><strong>NEON SIMD 高速化</strong>: 96kHz/32-bitパイプラインをC++で完全再設計。従来のJava処理に対し4倍の並列演算効率を実現。</li>
+            <li><strong>True Peak セーフティ・リミッター</strong>: 4倍オーバーサンプリングFIRと1ms先読みにより、DACでの物理クリッピングを完璧に排除。</li>
+            <li><strong>Zero-Jitter RAMディスク</strong>: 64MBの先読みキャッシュ。ストレージI/Oや通信スパイクから音声時計を切り離した完全オンメモリ再生。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📐 空間 ＆ 仮想音響マトリクス (5x5)</h2>
+        <p>物理頭部モデリングに基づく、精密な音像定位と奥行き制御。</p>
+        <ul>
+            <li><strong>Woodworth ITD モデル</strong>: サブサンプル精度（分数次ディレイ）による15°〜90°の音場角度制御。</li>
+            <li><strong>距離軸インテリジェンス</strong>: 球面波の近接効果（低域ブースト）と空気吸音（高域ロールオフ）を距離に応じてエミュレート。</li>
+            <li><strong>ILD シャドウイング</strong>: ネイティブIIRフィルタによる、周波数依存の頭部回折シミュレーション。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 物理モデリング ＆ 復元エンジン</h2>
+        <ul>
+            <li><strong>真空管物理モデリング V4</strong>: 300B（三極管）とKT88（ビーム管）の回路を数式化。電源サグ（Power Supply Sag）による有機的なコンプレッションを再現。</li>
+            <li><strong>Hi-Fi 復元 (Restoration)</strong>: FFTを用いた倍音外挿とウェーブレット解析によるトランジェント復元。非可逆圧縮（MP3/AAC）で失われた鮮度を再構築。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📖 リスニングWiki ＆ データハブ</h2>
+        <ul>
+            <li><strong>スマート・アンカー</strong>: MusicBrainz, Discogs, Wikipediaへワンタップでアクセス。</li>
+            <li><strong>深層制作クレジット</strong>: その名盤を支えたプロデューサー、スタジオ、そして歴史的なマイク（Neumann等）の情報を自動特定。</li>
+            <li><strong>由来の追跡</strong>: マスタリング仕様やリマスター履歴のフィンガープリント識別。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎨 統合されたシステムUI</h2>
+        <ul>
+            <li><strong>筐体のシンメトリー</strong>: 表面（Player）と裏面（Mixer）のボトムボタンを完全に同期。デバイスを反転させても変わらない直感的な操作感。</li>
+            <li><strong>厳格なステータス・ライティング</strong>: ホンキャリブレーションと共通の「シアン」を基調とした、プロ用計器品質のタイポグラフィ・インジケーター。</li>
+        </ul>
+    </section>
+
+    <p style="text-align: center; color: #888; font-size: 0.9em;">© 2026 Bisen Biscene Audio Engineering. Mastered for Excellence.</p>
+</body>
+</html>

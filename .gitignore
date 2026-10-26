@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+.idea/
+build/
+app/.cxx/
+app/build/
+local.properties
+node_modules/
+dist/
+.artifacts/
+*.tsbuildinfo
+.DS_Store
+*.zip

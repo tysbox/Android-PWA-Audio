@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biscene DSPSystem V5 - 全技術仕様 ＆ 機能詳細</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #222; max-width: 960px; margin: 0 auto; padding: 40px 20px; background: #f4f6f8; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #111; font-size: 2.6em; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+        .version-badge { background: #00bcd4; color: white; padding: 6px 18px; border-radius: 50px; font-size: 0.38em; vertical-align: middle; position: relative; top: -12px; font-weight: 700; letter-spacing: 0.5px; }
+        .subtitle { color: #666; font-size: 1.1em; margin-top: 0; }
+        section { background: white; padding: 32px 35px; border-radius: 18px; box-shadow: 0 12px 35px rgba(0,0,0,0.04); margin-bottom: 28px; border: 1px solid #eef2f5; }
+        h2 { color: #00bcd4; border-left: 5px solid #00bcd4; padding-left: 15px; margin-top: 0; margin-bottom: 20px; font-size: 1.45em; text-transform: uppercase; letter-spacing: 0.8px; }
+        p { margin-bottom: 15px; color: #444; }
+        ul { padding-left: 22px; margin-bottom: 0; }
+        li { margin-bottom: 12px; color: #333; }
+        li:last-child { margin-bottom: 0; }
+        strong { color: #111; font-weight: 700; }
+        .feature-tag { display: inline-block; background: #e0f7fa; color: #00838f; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        footer { text-align: center; color: #888; font-size: 0.9em; margin-top: 50px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V5 Complete</span></h1>
+        <p class="subtitle">次世代プロフェッショナル・ネイティブ・マスタリング・エンジンの到達点</p>
+    </header>
+
+    <section>
+        <h2>🚀 1. コア・ネイティブNDK ＆ USB ビットパーフェクト直結パイプライン</h2>
+        <p>ARM NEON SIMD 演算に最適化された 96kHz / 32-bit Float 精度マスタリング処理基盤と、AudioFlinger を完全バイパスする USB 直結 E2E ビットパーフェクト出力。</p>
+        <ul>
+            <li><strong>NEON SIMD 96kHz/32-bit Float パイプライン</strong>: 96,000Hz / 32-bit Floating Point の全マスタリングDSP処理を ARM NEON 命令で並列高速化。</li>
+            <li><strong>サンプル精度 ギャップレス再生パイプライン (Gapless Playback Engine)</strong>:
+                <br>・<span class="feature-tag">`SinkCarrier` 引き継ぎアーキテクチャ</span> トラック終了時に音声出力シンク (`AudioTrack` / USB Direct) を破棄せず保持。後続トラックが前曲のバッファ末尾へ直結して PCM パケットをパッキング・書き込みすることで、無音隙間（ギャップ）やノイズのない完璧なギャップレス再生を実現。
+                <br>・<span class="feature-tag">`LookaheadScheduler` 先読みプリウォーム</span> 曲終了の 5 秒前 (`DEFAULT_WINDOW_MS = 5000L`) に次曲を自動検出し、バックグラウンドでデコーダー (`PrewarmCache`) を先読み初期化。</li>
+            <li><strong>デュアルパス 絶対位相反転機能 (0° Normal / 180° Phase Reverse)</strong>:
+                <br>・<span class="feature-tag">DSP ON モード</span> C++/NDK 層 (`NativeDspChain` - `nativeSetPhaseInverted`) にて 1ms クロスフェードによるノイズフリーな 180° 絶対位相反転。
+                <br>・<span class="feature-tag">DSP OFF (ビットパーフェクト) モード</span> `JavaPhaseInverter` により、USB パッキング直前の生の PCM データに対してビット深度・サンプルレート精度を保ちながら 180° 位相反転を非破壊適用。</li>
+            <li><strong>4点 Catmull-Rom リニアフェーズ・リサンプラー (`RateConverter`)</strong>:
+                <br>・<span class="feature-tag">Catmull-Rom 3次スプライン補間</span> 入力音源 (44.1k/48k/88.2k等) を 96kHz へ高精度再サンプリング処理。
+                <br>・<span class="feature-tag">Linear Phase ＆ Zero Pre-Ringing</span> 時間対称な 4 点多項式補間カーネル ($p_0, p_1, p_2, p_3$) により、完全な直線位相特性（リニアフェーズ）と群遅延歪みゼロを実現。一般的な長タップ FIR シンクフィルタで発生するプリリンギング（事前前鳴りノイズ）を完全に排除し、音源のアタック立ち上がりトランジェントを忠実に防護。</li>
+            <li><strong>USB 直結出力モード (AudioFlinger バイパス)</strong>:
+                <br>・<span class="feature-tag">DSP オフ時 (E2E ビットパーフェクト直結)</span> End-to-End (E2E) ビットパーフェクト直結伝送。音源本来のサンプルレートおよび元のビット深度（16-bit / 24-bit / 32-bit）のまま、1 ビットも変更・改変・再サンプリングを行わずに外部 USB DAC へ完全無加工ダイレクト送信。
+                <br>・<span class="feature-tag">DSP オン時 (96kHz / 32-bit マスタリング ＆ 24-bit ダウングレード対応)</span> `NativeDspChain` を通過し 96kHz / 32-bit Float 精度で高品質演算。接続先の外部 USB DAC が 32-bit 非対応の場合は、DAC のハードウェア限界に合わせ自動的に 24-bit (`UsbPcmPacker`) へ安全ダウングレード。</li>
+            <li><strong>Direct NDK Isochronous USB エンジン (`UsbDirectEngine`)</strong>:
+                <br>・C++/NDK 層から Linux `ioctl` を通じて USB 等時性 URB (`USBDEVFS_URB_TYPE_ISO`) を直接送信。Android `AudioTrack` や OS リサンプラーを一切通過しません。
+                <br>・<span class="feature-tag">動的カーネルドライバー解放＆再結合</span> USB DAC 接続時に `USBDEVFS_DISCONNECT_CLAIM` で標準の `snd-usb-audio` ドライバーを自動切断。デバイス解放時には `USBDEVFS_CONNECT` で自動再結合し、システム音声の復元を完全自動化。
+                <br>・<span class="feature-tag">UAC1 / UAC2 ディスクリプター解析</span> USB Audio Class 1 / 2 ディスクリプター構造を直接解析し、DAC が対応するサンプルレート・チャンネル数・ビット精度を自動検出。</li>
+            <li><strong>トリプル出力アーキテクチャ</strong>:
+                <br>・<span class="feature-tag">USB Direct Mode</span> 外部 USB DAC への USB Isochronous 直結出力（DSP オフ: E2E ビットパーフェクト / DSP オン: 96kHz/32bit・24bit ダウングレード）。
+                <br>・<span class="feature-tag">System Direct Mode</span> Android `AudioTrack` (96kHz Float) へ直接書き込みを行う直結再生。
+                <br>・<span class="feature-tag">HTTP Proxy Mode</span> 内蔵プロキシ (`http://127.0.0.1:9600/pcm`) による 32-bit Float PCM 配信。</li>
+            <li><strong>Lock-Free Zero-Allocation スレッド</strong>: 音声再生スレッドでの動的メモリ割り当ておよびロック取得を完全に排除し、音飛びを追放。</li>
+            <li><strong>True Peak セーフティ・リミッター</strong>: 4倍オーバーサンプリング FIR と 1.0ms 先読みにより、DAC でのインダーサンプル・ピーク (ISP) クリッピングを物理防護。</li>
+            <li><strong>Hi-Res ＆ DSD/DSF ネイティブデコーダー</strong>: DSD (`.dsf`, `.dff`) 1-bit ビットストリームデコード (`DsfDecoderV2`) および FLAC, WAV, ALAC, AAC, MP3, M4A 多フォーマット対応。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📐 2. 空間 ＆ 仮想音響マトリクス (5x5)</h2>
+        <p>物理頭部音響モデリングに基づく精密な音場角度と距離感の物理再現。</p>
+        <ul>
+            <li><strong>Woodworth ITD モデル</strong>: サブサンプル精度（分数次ディレイ）による 15°〜90° の精密な音場角度定位制御。</li>
+            <li><strong>Spherical Head Shadowing</strong>: 周波数依存の頭部回折 (ILD) をネイティブ IIR フィルタで高度にエミュレート。</li>
+            <li><strong>距離軸インテリジェンス</strong>:
+                <br>・<span class="feature-tag">Proximity Effect</span> 近接聴取時における球面波の低域ブースト効果。
+                <br>・<span class="feature-tag">Air Absorption</span> 遠方音場における高域空気減衰特性のリアルタイム模倣。</li>
+            <li><strong>Virtual Acoustic 境界吸音プロファイル</strong>: Studio, Wood, Glass などの材質吸収特性に応じた音響空間プリセット。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🏛️ 3. アンビエンス ＆ リアル FIR コンボリューション</h2>
+        <p>インパルス応答 (IR) に基づくリアルタイム畳み込み音響空間生成。</p>
+        <ul>
+            <li><strong>ハイブリッド FIR コンボリューション ＋ フィードバックテイル</strong>: 1024-tap NEON 最適化初期反射 FIR と 4-comb / 2-allpass フィードバックテイルの統合演算。</li>
+            <li><strong>Zero-Copy Fast Path (`irId`)</strong>: 安定識別子システムにより、メモリ再割り当てやロック競合を一切起こさずに残響強度・減衰時間を即時無段階調整。</li>
+            <li><strong>実測 IR アセットカタログ</strong>: Studio Hall, Jazz Club, Large Bottle Hall, St. Nicolaes Church などの高品質音響空間を標準内蔵。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 4. 物理モデリング、Hi-Fi 復元 ＆ パラメトリック EQ</h2>
+        <p>真空管回路の物理的数式化とロスソースの倍音再構築、高度なキャリブレーション。</p>
+        <ul>
+            <li><strong>Hi-Fi 復元 (Restoration) エンジン</strong>:
+                <br>・<span class="feature-tag">Harmonic Extrapolation</span> 非可逆圧縮で失われた高域倍音 (24kHz〜32kHz) を FFT 解析で再構築。
+                <br>・<span class="feature-tag">Transient Punch</span> ウェーブレット解析によるアタックの鮮度復元。
+                <br>・<span class="feature-tag">De-Pre-Echo</span> デジタルプリリンギングの動的抑制。</li>
+            <li><strong>真空管物理モデリング (Tube Model)</strong>:
+                <br>・<span class="feature-tag">Triode (300B)</span> 第2次倍音を強調する非対称伝達関数。
+                <br>・<span class="feature-tag">Pentode (KT88)</span> ダイナミックな対照飽和特性。
+                <br>・<span class="feature-tag">Power Supply Sag</span> 高負荷時における B+ 電圧ドロップの有機的再現。</li>
+            <li><strong>多段パラメトリック EQ ＆ キャリブレーション</strong>:
+                <br>・Source EQ, Band EQ, Output EQ の 3 段階パラメトリック処理。
+                <br>・50Hz / 60Hz 電源ハムノイズ・ノッチフィルター。
+                <br>・2.2MB Headphone AutoEQ データベース (Crinacle ＆ Oratory1990) とリアルタイム合成カーブ描画機能。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📖 5. リスニングWiki ＆ 百科事典的データハブ</h2>
+        <p>楽曲の背景・制作クレジット・アーティスト史を全自動で深層解析。</p>
+        <ul>
+            <li><strong>多層メタデータ拡張パイプライン</strong>:
+                <br>1. <span class="feature-tag">AcoustID</span> 音声指紋解析による楽曲の自動識別。
+                <br>2. <span class="feature-tag">MusicBrainz & Discogs</span> プロデューサー、録音エンジニア、スタジオ、レーベル情報の自動抽出。
+                <br>3. <span class="feature-tag">Wikipedia</span> アーティストバイオグラフィおよび同名演奏家の曖昧さ回避処理。</li>
+            <li><strong>統合アルバムアート抽出パイプライン</strong>: 埋め込みタグ ➔ ローカルフォルダ画像 ➔ NAS UPnP メタデータ ➔ iTunes Search API 同期/非同期フォールバックの全自動検索。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🌐 6. OpenHome ＆ UPnP/DLNA DMR ネットワークアーキテクチャ</h2>
+        <p>ハイエンド・ネットワークオーディオ機器との完全双方向連携。</p>
+        <ul>
+            <li><strong>OpenHome レンダラー フルスペック対応</strong>:
+                <br>・`oh_product`, `oh_playlist`, `oh_transport`, `oh_volume`, `oh_info`, `oh_time` 全サービス対応。
+                <br>・`advanceAfterNaturalEnd()` による自然曲終了後の自動キュー連続再生、`Move`, `ReadList`, `Insert`, `DeleteId`, `IdArray` base64 状態同期。
+                <br>・Linn Kazoo, Linn App, BubbleUPnP, Twonky, Soundgenic NAS などのコントローラと完全互換。</li>
+            <li><strong>UPnP AV DMR (Digital Media Renderer)</strong>: `AVTransport` および `RenderingControl` の完全サポート。</li>
+            <li><strong>Dual SSDP Bridge</strong>: ローカルネットワーク上で UPnP DMR と OpenHome Renderer の両デバイス記述を同時にマルチキャスト公告。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🛡️ 7. バックグラウンド実行 ＆ 決定論的システム保護</h2>
+        <p>Android OS の省電力機能やタスクキラーから再生プロセスを鉄壁防護。</p>
+        <ul>
+            <li><strong>USB オーディオ・ホットプラグ ＆ マネージャー (`UsbAudioDetector`)</strong>:
+                <br>・USB 機器の挿抜 (`ACTION_USB_DEVICE_ATTACHED` / `DETACHED`) を監視し、外部 USB DAC のファイル記述子 (FD) を自動取得。</li>
+            <li><strong>Android Media3 `PlaybackService`</strong>: ロック画面ウィジェット、クイック設定メディア操作、Bluetooth ヘッドセットリモコン (Play/Pause/Next/Prev/Seek) 統合。</li>
+            <li><strong>セーブモード（省電力）保護メカニズム</strong>:
+                <br>・<span class="feature-tag">PARTIAL_WAKE_LOCK</span> `BiscenePlayerV2` デコードスレッド専用の CPU WakeLock (`DSP:PlayerV2ThreadLock`) を保持し、画面消灯やセーブモード下での音飛びを物理防止。
+                <br>・<span class="feature-tag">WifiLock & MulticastLock</span> 高性能 Wi-Fi ロック (`WIFI_MODE_FULL_HIGH_PERF`) および UPnP マルチキャスト保持。</li>
+            <li><strong>Storage Access Framework (SAF)</strong>: SAF フォルダ選択 (`pickLocalFolder`)、MediaStore インポート、ドキュメントツリー走査によるローカル再生対応。</li>
+            <li><strong>対数 VU メーター ＆ ピーク累積安全ガード</strong>: 100ms ピーク累積処理と有限浮動小数点ガード (`Float.isFinite()`) による針の振り切り防止。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎨 8. レトロ・スキューモフィック・オーディオシャーシ UI ＆ 触覚ハプティクス</h2>
+        <p>ビンテージ高級オーディオ機器の質感と手応えをデジタルで再現。</p>
+        <ul>
+            <li><strong>触覚メカニカルコントロール ＆ ハプティックフィードバック</strong>: アルミ削り出しのボリュームダイヤル、3 ポジション金属トグルスイッチ操作時に連動する微細触覚振動フィードバック (`triggerHaptic` tick/click)。</li>
+            <li><strong>リアルタイム アナログ VU メーター</strong>: ポストフェーダーの信号ダイナミクスを忠実に反映するデュアル・アナログ針メーター。</li>
+            <li><strong>ウッドフレームレスポンシブレイアウト</strong>: モバイル、タブレット、デスクトップの全画面サイズに対応する木目調高級シャーシデザイン。</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>© 2026 Bisen Biscene Audio Engineering. Mastered for Excellence.</p>
+    </footer>
+</body>
+</html>

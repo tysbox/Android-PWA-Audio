@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biscene DSPSystem V6.4 - Comprehensive Technical Specifications</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #222; max-width: 960px; margin: 0 auto; padding: 40px 20px; background: #f4f6f8; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #111; font-size: 2.6em; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+        .version-badge { background: #00bcd4; color: white; padding: 6px 18px; border-radius: 50px; font-size: 0.38em; vertical-align: middle; position: relative; top: -12px; font-weight: 700; letter-spacing: 0.5px; }
+        .subtitle { color: #666; font-size: 1.1em; margin-top: 0; }
+        section { background: white; padding: 32px 35px; border-radius: 18px; box-shadow: 0 12px 35px rgba(0,0,0,0.04); margin-bottom: 28px; border: 1px solid #eef2f5; }
+        h2 { color: #00bcd4; border-left: 5px solid #00bcd4; padding-left: 15px; margin-top: 0; margin-bottom: 20px; font-size: 1.45em; text-transform: uppercase; letter-spacing: 0.8px; }
+        p { margin-bottom: 15px; color: #444; }
+        ul { padding-left: 22px; margin-bottom: 0; }
+        li { margin-bottom: 12px; color: #333; }
+        li:last-child { margin-bottom: 0; }
+        strong { color: #111; font-weight: 700; }
+        .feature-tag { display: inline-block; background: #e0f7fa; color: #00838f; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .v62-tag { display: inline-block; background: #1565c0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .v64-tag { display: inline-block; background: #2e7d32; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .new-section { border-left: 5px solid #1565c0; }
+        .new-section h2 { color: #1565c0; border-left: none; padding-left: 0; }
+        .gate { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 8px 12px; border-radius: 4px; display: inline-block; font-size: 0.9em; }
+        footer { text-align: center; color: #888; font-size: 0.9em; margin-top: 50px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V6.4 Production</span></h1>
+        <p class="subtitle">The next-generation professional native mastering engine — now with the Night-mode distortion root fix (D1 RMS detection) and Info metadata accuracy (Phase 0/1)</p>
+    </header>
+
+    <section class="new-section">
+        <h2>✅ V6.3/V6.4 Verification Summary (on-device measurements)</h2>
+        <p>Both the Night-mode low-mid distortion fix (D1) and Info accuracy Phase 0 (A–D) were implemented <strong>non-destructively</strong>. On-device (Huawei MAR-LX2J): <span class="gate">NightCompressorDistortionTest 3/3 GREEN (measured 2026-10-15)</span></p>
+        <ul>
+            <li><span class="v64-tag">D1 gate</span><strong>Low-mid THD</strong>: <strong>1.120 / 0.647 / 0.322%</strong> at 60/120/250Hz (was 5.11–5.91%, gate <1.5%). With peak→RMS detection, the distortion is gone at ANY listening volume.</li>
+            <li><span class="v64-tag">D1 gate</span><strong>Loud-passage reduction ON-vs-OFF</strong>: <strong>−5.16 dB</strong> (gate ≤−4dB — Night's intent preserved).</li>
+            <li><span class="v64-tag">D1 gate</span><strong>Volume independence</strong>: THD <strong>0.532% identical</strong> at output volumes 1.0/0.3/0.05 (physical proof the compressor runs before the volume stage).</li>
+            <li><span class="v64-tag">Performance</span>Compressor stage +0.08% (49.4ms per 60s audio — negligible). JVM tests 240/0/0 (including V6.4 additions).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🚀 1. Core Native NDK & USB Bit-Perfect Direct Pipeline</h2>
+        <p>A 96kHz / 32-bit Float mastering foundation optimized with ARM NEON SIMD, and USB direct E2E bit-perfect output that completely bypasses AudioFlinger.</p>
+        <ul>
+            <li><strong>NEON SIMD 96kHz/32-bit Float Pipeline</strong>: The complete mastering DSP chain at 96,000Hz / 32-bit Floating Point, parallelized with ARM NEON instructions.</li>
+            <li><strong>Sample-Accurate Gapless Playback Pipeline</strong>:
+                <br>・<span class="feature-tag">SinkCarrier Handover Architecture 【verified】</span> Retains the output sink across track boundaries; the successor appends seamlessly behind the buffered tail (zero silent gaps). Buffer floor 196,608 frames ≈ 2.048s; SeamAudit logs GAPLESS when drained < capacityFrames.
+                <br>・<span class="feature-tag">LookaheadScheduler Prewarm</span> Probes the next track 5s before completion (network-scaled 5/8/12s) and pre-initializes the decoder.
+                <br>・<span class="feature-tag">Fade-Hold Tail Emission</span> The true final chunk is faded (up to 3ms / 288 frames) through the full DSP/sink path — every track ends at exact zero amplitude.</li>
+            <li><strong>Dual-Path Absolute Phase Control (0° / 180°)</strong>:
+                <br>・<span class="feature-tag">DSP ON 【verified】</span> C++/NDK-level (~1ms cross-fade) via <code>nativeSetPhaseInverted</code>.
+                <br>・<span class="feature-tag">DSP OFF 【verified】</span> <code>JavaPhaseInverter</code> flips raw PCM before USB packing (bit depth & SR fully preserved).</li>
+            <li><span class="v64-tag">V6.3 D1</span><strong>Night Mode Dynamics Compressor (RMS detection)</strong>:
+                <br>・<span class="feature-tag">RMS feed-forward detection</span> Mean-square smoothed over ~5ms; gain stays constant within a cycle, so low-mid AM distortion is impossible by construction (measured THD 5.9% → 0.32–1.12%).
+                <br>・<span class="feature-tag">Contract unchanged</span> 2:1 / −24dB / 20ms-300ms / −9dB floor / ~10ms ramp toggle / kill-switch all preserved. Disabled state is bit-transparent (max|diff| = 0 measured).
+                <br>・<span class="feature-tag">Lock-free & allocation-free</span> R4 fully respected (zero new atomics).</li>
+            <li><strong>4-Point Catmull-Rom Linear-Phase Resampler (RateConverter) 【verified】</strong>: Time-symmetric kernel, linear phase, zero pre-ringing. The WAV 44.1kHz stutter root cause was fixed via pipelineBuf 73,728 floats.</li>
+            <li><strong>USB Direct Output (AudioFlinger bypass)</strong>:
+                <br>・<span class="feature-tag">DSP OFF (E2E bit-perfect)</span> SR, bit depth and raw PCM delivered 100% bit-exact to the DAC.
+                <br>・<span class="feature-tag">DSP ON (96kHz/32-bit & 24-bit fallback)</span> Auto-downgrades to 24-bit when the DAC cannot do 32-bit.</li>
+            <li><strong>Direct NDK Isochronous USB Engine</strong>: Raw ISO URBs via Linux ioctl; dynamic kernel driver claim/re-binding; UAC1/UAC2 descriptor parsing; soft-start anti-pop ramp (8 chunks, ~20–50ms).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🌊 2. Spatial & Virtual Acoustic Matrix (5x5)</h2>
+        <ul>
+            <li><strong>Unity-Gain Crossfeed (Woodworth ITD) 【verified】</strong>: 6-position angle dial (OFF–90°), fixed 0.26 crossfeed factor, direct path 1.0 (no level loss vs bypass), sub-sample fractional ITD with linear interpolation.</li>
+            <li><strong>Spherical Head Shadowing</strong>: Native IIR shelving applies frequency-dependent ILD to the crossfed component only.</li>
+            <li><strong>Distance Control Intelligence 【verified】</strong>: OFF / INTIMATE / NEAR / NORMAL / FAR / DEEP — proximity effect, air absorption, envL/envR correction in the same 5x5 pass.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🏛️ 3. Ambience & Real FIR Convolution Engine</h2>
+        <ul>
+            <li><strong>Hybrid FIR Convolution + Feedback Tail</strong>: 1024-tap NEON-optimized early reflection FIR + 4-comb / 2-allpass diffuse tail (RT60 per room preset).</li>
+            <li><span class="v64-tag">V6.4</span><strong>IR Intensity Mapping Update</strong>: UI 0–100 → wet 0–<strong>33.3%</strong> (divisor /300, +33% vs the old /400 = 25%). On-device: <span class="gate">i=100 → 0.6667, matches theory exactly</span>. The dry coefficient (1−amb) always stays positive; the TruePeakLimiter still guards the tail. The P3 thermal halving acts on the UI scale and remains consistent.</li>
+            <li><strong>Zero-Copy Fast Path</strong>: Stable irId retunes intensity/decay instantly without reallocation (fast path touches only atomics).</li>
+            <li><strong>IR Asset Catalog</strong>: Studio Hall / Jazz Club / Large Bottle Hall / St. Nicolaes Church (V4.5.8: leading-silence trim + 0.9/√energy normalization).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🔧 4. High-Fidelity Restoration, Physical Modeling & Parametric EQ</h2>
+        <ul>
+            <li><strong>Restoration Engine</strong>: Harmonic extrapolation (24–32kHz) / transient punch / de-pre-echo.</li>
+            <li><strong>Tube Physical Modeling</strong>: Triode 300B (asymmetric 2nd-order) / Pentode KT88 (symmetric) / power-supply sag. The Output EQ dial's TUBE slot was handed to NIGHT; tube modeling remains fully available via the mixer TUBE WARMTH toggle.</li>
+            <li><strong>3-Stage EQ & Calibration</strong>: Source / Band / Output EQ; 7-position Output dial (OFF/STUDIO/JBL/PLANAR/LOUD/CRYSTAL/NIGHT); AutoEQ database (Crinacle & Oratory1990).</li>
+        </ul>
+    </section>
+
+    <section class="new-section">
+        <h2>📚 5. Encyclopedic Metadata & Listening Wiki Hub (V6.4 Phase 0/1 complete)</h2>
+        <ul>
+            <li><span class="v64-tag">Phase 0-A</span><strong>MB Scored Matching</strong>: TopN candidates ranked artist40+title40+duration15+country5 (Levenshtein + diacritics normalization); abstains below <code>MIN_SCORE=55</code> (an empty display beats a wrong entity).</li>
+            <li><span class="v64-tag">Phase 0-B</span><strong>MBID Persistent Cache</strong>: Verified recording/release/artist MBIDs persisted in SharedPreferences; revisits skip search and fetch details directly (faster, fewer API calls). Kill-switched.</li>
+            <li><span class="v64-tag">Phase 0-C</span><strong>Discogs LRU Cap</strong>: 3 caches replaced by cap=200 synchronized LRU maps (memory-safe, behavior-identical).</li>
+            <li><span class="v64-tag">Phase 0-D + UI</span><strong>User PIN Correction</strong>: The Info modal now exposes a "Wrong match?" row — No info (abstain) / Set MBID (pin the correct recording) — persisted and applied at the topmost rank on later plays.</li>
+            <li><span class="v64-tag">Phase 1-E</span><strong>CoverArtArchive Jacket</strong>: Fetches the CAA front cover via MB release-id (key-free). Fallback order: embedded → folder → <strong>CAA</strong> → iTunes. Any failure falls back instantly (non-destructive).</li>
+            <li><span class="v64-tag">Phase 1-F</span><strong>MB Item Expansion (zero new API calls)</strong>: ISRC, first-release year, catalog numbers and the tracklist are extracted from ALREADY-fetched payloads and shown in the Info UI.</li>
+            <li><span class="v64-tag">Phase 1-G</span><strong>Wikidata Support Facts</strong>: From the MB artist url-rels QID — birth/death dates, instruments, official site and image corroborate the bio (key-free; the foundation for multilingual bios).</li>
+            <li><span class="v64-tag">V6.4 fix</span><strong>Signal Tab Native Resolution</strong>: productionInfo now carries format/srcRate/srcBits for BOTH paths (previously renderer-only, so local playback stayed "Detecting..." forever). Display-only; the audio path is untouched.</li>
+            <li><strong>Multi-tier Art Pipeline</strong>: Embedded tags → local folder → CAA → iTunes Search API. NativeImage deferred loading protects the main cover.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📡 6. OpenHome & UPnP/DLNA DMR Network Architecture</h2>
+        <ul>
+            <li><strong>Full OpenHome Renderer</strong>: oh_product / oh_playlist / oh_transport / oh_volume / oh_info / oh_time — compatible with Linn Kazoo, BubbleUPnP and friends.</li>
+            <li><strong>SSDP Dual Bridge 【verified】</strong>: Advertises DMR + OpenHome simultaneously on the single port 1900.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🔋 7. Background Execution & Deterministic System Integrity</h2>
+        <ul>
+            <li><strong>Background Playback</strong>: The process survives Activity finish while audio is active. (V6.4: self-kill is suppressed while an instrumentation run is attached — measurement stability only; production behavior unchanged.)</li>
+            <li><strong>USB Hotplug / Media3 / Battery Protection</strong>: PARTIAL_WAKE_LOCK, high-performance Wi-Fi lock, SAF deep picking, VU peak accumulation safety.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎛️ 8. Retro Skeuomorphic Chassis UI & Tactile Haptics</h2>
+        <ul>
+            <li><strong>Tactile mechanical controls</strong>: Machined dials, 3-position toggles, aluminum panels + haptics (tick/click/heavy).</li>
+            <li><strong>Real-time VU meters & Bit-Perfect OSD</strong>: Post-fader logarithmic VU and the BIT PERFECT indicator.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 9. Performance & Resource Optimizations</h2>
+        <ul>
+            <li><strong>Consolidated thread pools (~30 threads)</strong> / <strong>Code splitting</strong>: the 2.2MB headphone catalog stays an async chunk (initial JS 350.66 kB / gzip 103.68 kB).</li>
+            <li><strong>Zero-allocation render loop</strong> / <strong>metadata LRU</strong> / <strong>PrewarmCache 32 entries</strong>.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎒 10. Portable Environment Adaptation (V6.2 — all implemented)</h2>
+        <ul>
+            <li><strong>N1 Night Mode</strong>: Output EQ integration + DynamicsCompressor (V6.3 D1 RMS; finalized by the V6.4 on-device 3-gate green run).</li>
+            <li><strong>N2 Loudness Normalization</strong>: K-weighting approximation + trigger wiring (the filter-coefficient bug was fixed via GainProbe measurement).</li>
+            <li><strong>P1 Auto-DAC Profile & Protect</strong> / <strong>P2 Network-resilient variable pre-roll (5/8/12s)</strong> / <strong>P3 Thermal & Battery DSP scaler</strong> (exact restoration via lastUserAmbIntensity on cooldown).</li>
+            <li>Every feature carries a kill-switch (<code>setEnabled(false)</code>) for instant, rebuild-free rollback (R5).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🛡️ Safety Rules (R1–R5)</h2>
+        <ul>
+            <li><strong>R1 Bit-Perfect</strong>: 100% bit-exact passthrough with DSP OFF; zero gain changes in steady state.</li>
+            <li><strong>R2 Gapless</strong>: Sample-accurate, phase-continuous track boundaries.</li>
+            <li><strong>R3 True-Peak</strong>: 4× FIR oversampling + 1ms lookahead captures ISPs (threshold 0.98).</li>
+            <li><strong>R4 Lock-Free</strong>: No new locks/heap/syscalls on the audio thread.</li>
+            <li><strong>R5 Kill-Switch</strong>: Every feature has an instant legacy-revert path.</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>Biscene DSPSystem V6.4 Production — updated 2026-10-16 | See PLAYBACK_FULL_SPEC_V6_4.md for the canonical text</p>
+    </footer>
+</body>
+</html>

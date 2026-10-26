@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biscene DSPSystem V6.2 - 全技術仕様 ＆ 機能詳細</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #222; max-width: 960px; margin: 0 auto; padding: 40px 20px; background: #f4f6f8; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #111; font-size: 2.6em; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+        .version-badge { background: #00bcd4; color: white; padding: 6px 18px; border-radius: 50px; font-size: 0.38em; vertical-align: middle; position: relative; top: -12px; font-weight: 700; letter-spacing: 0.5px; }
+        .subtitle { color: #666; font-size: 1.1em; margin-top: 0; }
+        section { background: white; padding: 32px 35px; border-radius: 18px; box-shadow: 0 12px 35px rgba(0,0,0,0.04); margin-bottom: 28px; border: 1px solid #eef2f5; }
+        h2 { color: #00bcd4; border-left: 5px solid #00bcd4; padding-left: 15px; margin-top: 0; margin-bottom: 20px; font-size: 1.45em; text-transform: uppercase; letter-spacing: 0.8px; }
+        p { margin-bottom: 15px; color: #444; }
+        ul { padding-left: 22px; margin-bottom: 0; }
+        li { margin-bottom: 12px; color: #333; }
+        li:last-child { margin-bottom: 0; }
+        strong { color: #111; font-weight: 700; }
+        .feature-tag { display: inline-block; background: #e0f7fa; color: #00838f; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .v62-tag { display: inline-block; background: #1565c0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .new-section { border-left: 5px solid #1565c0; }
+        .new-section h2 { color: #1565c0; border-left: none; padding-left: 0; }
+        footer { text-align: center; color: #888; font-size: 0.9em; margin-top: 50px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V6.2 Production</span></h1>
+        <p class="subtitle">ポータブル環境適応機能を統合した、次世代プロフェッショナル・ネイティブ・マスタリング・エンジン</p>
+    </header>
+
+    <section>
+        <h2>🚀 1. コア・ネイティブNDK ＆ USB ビットパーフェクト直結パイプライン</h2>
+        <p>ARM NEON SIMD 演算に最適化された 96kHz / 32-bit Float 精度マスタリング処理基盤と、AudioFlinger を完全バイパスする USB 直結 E2E ビットパーフェクト出力。</p>
+        <ul>
+            <li><strong>NEON SIMD 96kHz/32-bit Float パイプライン</strong>: 96,000Hz / 32-bit Floating Point の全マスタリングDSP処理を ARM NEON 命令で並列高速化。</li>
+            <li><strong>サンプル精度 ギャップレス再生パイプライン (Gapless Playback Engine)</strong>:
+                <br>・<span class="feature-tag">`SinkCarrier` 引き継ぎアーキテクチャ</span> トラック終了時に音声出力シンク (`AudioTrack` / USB Direct) を破棄せず保持。後続トラックが前曲のバッファ末尾へ直結し、無音隙間（ギャップ）やノイズのない完璧なギャップレス再生を実現。
+                <br>・<span class="feature-tag">`LookaheadScheduler` 先読みプリウォーム</span> 曲終了の 5 秒前に次曲を自動検出し、バックグラウンドでデコーダー (`PrewarmCache`) を先読み初期化。
+                <br>・<span class="feature-tag">Fade-Hold 末尾排出</span> 1 チャンク保留により真の最終チャンクを確定し、フェード（最大 3ms / 288 フレーム、実測 1114-1115 フレーム）を全 DSP/シンク経路で排出。全トラックが正確なゼロ振幅で終了。
+                <br>・<span class="feature-tag">Pause→Flush→Play 引き継ぎリアーム</span> 採用シンクを `pause()→flush()→play()` で再アームし、前曲の残留音声を確定的にクリア。
+                <br>・<span class="feature-tag">2秒バッファフロア</span> `Math.max(min*4, 1572864)` バイト (196,608 フレーム ≈ 2.0秒) が実測最悪 1.3 秒の park 期間を保護し、アンダーラン グリッチを排除。</li>
+            <li><strong>デュアルパス 絶対位相反転機能 (0° Normal / 180° Phase Reverse)</strong>:
+                <br>・<span class="feature-tag">DSP ON モード</span> C++/NDK 層 (`NativeDspChain` - `nativeSetPhaseInverted`) にて 1ms クロスフェードによるノイズフリーな 180° 絶対位相反転。
+                <br>・<span class="feature-tag">DSP OFF (ビットパーフェクト) モード</span> `JavaPhaseInverter` により、USB パッキング直前の生の PCM データに対してビット深度・サンプルレート精度を保ちながら 180° 位相反転を非破壊適用。</li>
+            <li><span class="v62-tag">V6.2</span><strong>ナイトモード・ダイナミクス・コンプレッサー (`DynamicsCompressor`)</strong>:
+                <br>・<span class="feature-tag">ジェントル フィードフォワード RMS 圧縮</span> 2:1 レシオ、−24dB しきい値、20ms アタック / 300ms リリース、−9dB 最大減衰フロア — ポンピングなしの静かなナイトリスニング。
+                <br>・<span class="feature-tag">~10ms ランプ安全トグル</span> 圧縮ミックスを ~10ms でランプ（PhaseInverter パターン）、切替時にポップは原理的に発生しない。無効時は純粋パススルー（コストゼロ）。
+                <br>・<span class="feature-tag">ロックフリー ＆ ゼロアロケーション</span> `setEnabled()` は relaxed atomic store（任意スレッドから安全）、`process()` は音声スレッド専用・ヒープ割り当てなし。
+                <br>・<span class="feature-tag">ビットパーフェクト純度</span> Output EQ ダイヤルが NIGHT の時のみ `night: true` を送信。`bypass: true`（ビットパーフェクト直結）パスはこの分岐に到達しないため、純度は設計上保証。</li>
+            <li><strong>4点 Catmull-Rom リニアフェーズ・リサンプラー (`RateConverter`)</strong>:
+                <br>・<span class="feature-tag">Catmull-Rom 3次スプライン補間</span> 入力音源 (44.1k/48k/88.2k等) を 96kHz へ高精度再サンプリング処理。
+                <br>・<span class="feature-tag">Linear Phase ＆ Zero Pre-Ringing</span> 時間対称な 4 点多項式補間カーネルにより、完全な直線位相特性と群遅延歪みゼロを実現。プリリンギング（事前前鳴りノイズ）を完全に排除し、音源のアタック立ち上がりトランジェントを忠実に防護。</li>
+            <li><strong>USB 直結出力モード (AudioFlinger バイパス)</strong>:
+                <br>・<span class="feature-tag">DSP オフ時 (E2E ビットパーフェクト直結)</span> End-to-End (E2E) ビットパーフェクト直結伝送。音源本来のサンプルレートおよび元のビット深度（16-bit / 24-bit / 32-bit）のまま、1 ビットも変更・改変・再サンプリングを行わずに外部 USB DAC へ完全無加工ダイレクト送信。
+                <br>・<span class="feature-tag">DSP オン時 (96kHz / 32-bit マスタリング ＆ 24-bit ダウングレード対応)</span> `NativeDspChain` を通過し 96kHz / 32-bit Float 精度で高品質演算。接続先の外部 USB DAC が 32-bit 非対応の場合は、DAC のハードウェア限界に合わせ自動的に 24-bit (`UsbPcmPacker`) へ安全ダウングレード。</li>
+            <li><strong>Direct NDK Isochronous USB エンジン (`UsbDirectEngine`)</strong>:
+                <br>・C++/NDK 層から Linux `ioctl` を通じて USB 等時性 URB (`USBDEVFS_URB_TYPE_ISO`) を直接送信。Android `AudioTrack` や OS リサンプラーを一切通過しません。
+                <br>・<span class="feature-tag">動的カーネルドライバー解放＆再結合</span> USB DAC 接続時に `USBDEVFS_DISCONNECT_CLAIM` で標準の `snd-usb-audio` ドライバーを自動切断。デバイス解放時には `USBDEVFS_CONNECT` で自動再結合し、システム音声の復元を完全自動化。
+                <br>・<span class="feature-tag">UAC1 / UAC2 ディスクリプター解析</span> USB Audio Class 1 / 2 ディスクリプター構造を直接解析し、DAC が対応するサンプルレート・チャンネル数・ビット精度を自動検出。</li>
+            <li><strong>トリプル出力アーキテクチャ</strong>:
+                <br>・<span class="feature-tag">USB Direct Mode</span> 外部 USB DAC への USB Isochronous 直結出力（DSP オフ: E2E ビットパーフェクト / DSP オン: 96kHz/32bit・24bit ダウングレード）。
+                <br>・<span class="feature-tag">System Direct Mode</span> Android `AudioTrack` (96kHz Float) へ直接書き込みを行う直結再生。
+                <br>・<span class="feature-tag">HTTP Proxy Mode</span> 内蔵プロキシ (`http://127.0.0.1:9600/pcm`) による 32-bit Float PCM 配信。</li>
+            <li><strong>Lock-Free Zero-Allocation スレッド</strong>: 音声再生スレッドでの動的メモリ割り当ておよびロック取得を完全に排除し、音飛びを追放。</li>
+            <li><strong>True Peak セーフティ・リミッター</strong>: 4倍オーバーサンプリング FIR と 1.0ms 先読みにより、DAC でのインダーサンプル・ピーク (ISP) クリッピングを物理防護。</li>
+            <li><strong>Hi-Res ＆ DSD/DSF ネイティブデコーダー</strong>:
+                <br>・DSD (`.dsf`, `.dff`) 1-bit ビットストリームデコード (`DsfDecoderV2`) および FLAC, WAV, ALAC, AAC, MP3, M4A 多フォーマット対応。
+                <br>・<span class="feature-tag">176.4kHz 動的デシメーション</span> 全 DSD レート (DSD64/128/256/512) を 176,400Hz ハイレゾ PCM へデシメーション (`decimR` = 16/32/64/128)。
+                <br>・<span class="feature-tag">クリーン末尾ブロック処理</span> 不完全な末尾ブロックを `drain()` で安全破棄（ダーティフレーム 0 を実証）； DSD64 デコードを実測 7.81 倍リアルタイム (t25)。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📐 2. 空間 ＆ 仮想音響マトリクス (5x5)</h2>
+        <p>物理頭部音響モデリングに基づく精密な音場角度と距離感の物理再現。</p>
+        <ul>
+            <li><strong>Unity-Gain クロスフィード（Woodworth ITD、ネイティブ `SpatialMatrix`）</strong>:
+                <br>・<span class="feature-tag">6段角度ダイヤル (OFF / 15° / 30° / 45° / 60° / 90°)</span> ミキサー行 `X-FEED ANGLE` ダイヤルで方位角を選択。OFF は完全ビット透過パススルー。
+                <br>・<span class="feature-tag">サブサンプル分数 ITD 遅延ライン</span> Woodworth モデル遅延 (`getItdSamples(angle)`) を線形補間で分数サンプル精度に対応； クロストーク成分を遅延させ、固定 0.26 の unity-gain クロスフィード係数で反対チャンネルへ注入（直接パスは 1.0 を維持 — バイパス比の音量損失なし）。
+                <br>・<span class="feature-tag">クロストークへの頭部シャドウイング</span> ネイティブ IIR シェルビングフィルタ (`shadowL`/`shadowR`) がクロスフィード成分のみに周波数依存 ILD を適用。</li>
+            <li><strong>Spherical Head Shadowing</strong>: 周波数依存の頭部回折 (ILD) をネイティブ IIR フィルタで高度にエミュレート。</li>
+            <li><strong>距離軸インテリジェンス（ミキサー `DISTANCE` ダイヤル: OFF / INTIMATE / NEAR / NORMAL / FAR / DEEP）</strong>:
+                <br>・<span class="feature-tag">Proximity Effect</span> 近接聴取時における球面波の低域ブースト効果。
+                <br>・<span class="feature-tag">Air Absorption</span> 遠方音場における高域空気減衰特性のリアルタイム模倣。
+                <br>・<span class="feature-tag">環境補正フィルタ (`envL`/`envR`)</span> クロスフィード後の同一 5x5 マトリクスパスでチャンネルごとの IIR 補正を適用。</li>
+            <li><strong>Virtual Acoustic 境界吸音プロファイル</strong>: Studio, Wood, Glass などの材質吸収特性に応じた音響空間プリセット。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🏛️ 3. アンビエンス ＆ リアル FIR コンボリューション</h2>
+        <p>インパルス応答 (IR) に基づくリアルタイム畳み込み音響空間生成。</p>
+        <ul>
+            <li><strong>ハイブリッド FIR コンボリューション ＋ フィードバックテイル</strong>: 1024-tap NEON 最適化初期反射 FIR と 4-comb / 2-allpass フィードバックテイルの統合演算。</li>
+            <li><strong>Zero-Copy Fast Path (`irId`)</strong>: 安定識別子システムにより、メモリ再割り当てやロック競合を一切起こさずに残響強度・減衰時間を即時無段階調整。</li>
+            <li><strong>実測 IR アセットカタログ</strong>: Studio Hall, Jazz Club, Large Bottle Hall, St. Nicolaes Church などの高品質音響空間を標準内蔵。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 4. 物理モデリング、Hi-Fi 復元 ＆ パラメトリック EQ</h2>
+        <p>真空管回路の物理的数式化とロスソースの倍音再構築、高度なキャリブレーション。</p>
+        <ul>
+            <li><strong>Hi-Fi 復元 (Restoration) エンジン</strong>:
+                <br>・<span class="feature-tag">Harmonic Extrapolation</span> 非可逆圧縮で失われた高域倍音 (24kHz〜32kHz) を FFT 解析で再構築。
+                <br>・<span class="feature-tag">Transient Punch</span> ウェーブレット解析によるアタックの鮮度復元。
+                <br>・<span class="feature-tag">De-Pre-Echo</span> デジタルプリリンギングの動的抑制。</li>
+            <li><strong>真空管物理モデリング (Tube Model)</strong>:
+                <br>・<span class="feature-tag">Triode (300B)</span> 第2次倍音を強調する非対称伝達関数。
+                <br>・<span class="feature-tag">Pentode (KT88)</span> ダイナミックな対照飽和特性。
+                <br>・<span class="feature-tag">Power Supply Sag</span> 高負荷時における B+ 電圧ドロップの有機的再現。
+                <br>・<span class="v62-tag">V6.2</span> Output EQ ダイヤルの TUBE 位置は NIGHT に置換。真空管物理モデリング自体 (`tube_v4` ペイロード、`TubeModel`) はミキサーの TUBE WARMTH トグルで全機能利用可能。</li>
+            <li><strong>多段パラメトリック EQ ＆ キャリブレーション</strong>:
+                <br>・Source EQ, Band EQ, Output EQ の 3 段階パラメトリック処理。
+                <br>・<span class="v62-tag">V6.2</span> <strong>Output EQ ダイヤル 7 段 (OFF / STUDIO / JBL / PLANAR / LOUD / CRYSTAL / NIGHT)</strong>: NIGHT は静的ナイト EQ カーブ (60Hz +5.5 / 250Hz +1.5 / 2.5kHz +3.0 / 14kHz −6.0 dB) と動的ナイトモードコンプレッサーの統合。LOUD は等聴コンター（NIGHT と真逆の目的）として維持。
+                <br>・50Hz / 60Hz 電源ハムノイズ・ノッチフィルター。
+                <br>・2.2MB Headphone AutoEQ データベース (Crinacle ＆ Oratory1990) とリアルタイム合成カーブ描画機能。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📖 5. リスニングWiki ＆ 百科事典的データハブ</h2>
+        <p>楽曲の背景・制作クレジット・アーティスト史を全自動で深層解析。</p>
+        <ul>
+            <li><strong>多層メタデータ拡張パイプライン</strong>:
+                <br>1. <span class="feature-tag">AcoustID</span> 音声指紋解析による楽曲の自動識別。
+                <br>2. <span class="feature-tag">MusicBrainz & Discogs</span> プロデューサー、録音エンジニア、スタジオ、レーベル情報の自動抽出。
+                <br>3. <span class="feature-tag">Wikipedia</span> アーティストバイオグラフィおよび同名演奏家の曖昧さ回避処理。</li>
+            <li><strong>統合アルバムアート抽出パイプライン</strong>: 埋め込みタグ ➔ ローカルフォルダ画像 ➔ NAS UPnP メタデータ ➔ iTunes Search API 同期/非同期フォールバックの全自動検索。</li>
+            <li><span class="v62-tag">V6.2</span><strong>NativeImage 遅延ロード</strong>: lazy トークン (`LAZY_BUCKET_SIZE`) により lazy フラグ付き画像が実際に遅延し、メインのアルバムカバー (`AlbumArtFrame`、eager) がバックグラウンド読み込みで starve しない。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🌐 6. OpenHome ＆ UPnP/DLNA DMR ネットワークアーキテクチャ</h2>
+        <p>ハイエンド・ネットワークオーディオ機器との完全双方向連携。</p>
+        <ul>
+            <li><strong>OpenHome レンダラー フルスペック対応</strong>:
+                <br>・`oh_product`, `oh_playlist`, `oh_transport`, `oh_volume`, `oh_info`, `oh_time` 全サービス対応。
+                <br>・`advanceAfterNaturalEnd()` による自然曲終了後の自動キュー連続再生、`Move`, `ReadList`, `Insert`, `DeleteId`, `IdArray` base64 状態同期。
+                <br>・Linn Kazoo, Linn App, BubbleUPnP, Twonky, Soundgenic NAS などのコントローラと完全互換。</li>
+            <li><strong>UPnP AV DMR (Digital Media Renderer)</strong>: `AVTransport` および `RenderingControl` の完全サポート。</li>
+            <li><strong>Dual SSDP Bridge</strong>: ローカルネットワーク上で UPnP DMR と OpenHome Renderer の両デバイス記述を同時にマルチキャスト公告。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🛡️ 7. バックグラウンド実行 ＆ 決定論的システム保護</h2>
+        <p>Android OS の省電力機能やタスクキラーから再生プロセスを鉄壁防護。</p>
+        <ul>
+            <li><strong>バックグラウンド再生 ＆ Activity 終了制御</strong>:
+                <br>・<span class="feature-tag">killProcess 回避</span> 音楽再生中 (`PlaybackService` アクティブ) に Activity が終了しても `killProcess` をバイパスし、バックグラウンド再生を正常継続。</li>
+            <li><strong>USB オーディオ・ホットプラグ ＆ マネージャー (`UsbAudioDetector`)</strong>:
+                <br>・USB 機器の挿抜 (`ACTION_USB_DEVICE_ATTACHED` / `DETACHED`) を監視し、外部 USB DAC のファイル記述子 (FD) を自動取得。</li>
+            <li><strong>Android Media3 `PlaybackService`</strong>: ロック画面ウィジェット、クイック設定メディア操作、Bluetooth ヘッドセットリモコン (Play/Pause/Next/Prev/Seek) 統合。</li>
+            <li><strong>セーブモード（省電力）保護メカニズム</strong>:
+                <br>・<span class="feature-tag">PARTIAL_WAKE_LOCK</span> `BiscenePlayerV2` デコードスレッド専用の CPU WakeLock (`DSP:PlayerV2ThreadLock`) を保持し、画面消灯やセーブモード下での音飛びを物理防止。
+                <br>・<span class="feature-tag">WifiLock & MulticastLock</span> 高性能 Wi-Fi ロック (`WIFI_MODE_FULL_HIGH_PERF`) および UPnP マルチキャスト保持。</li>
+            <li><strong>Storage Access Framework (SAF) ＆ OOM 防護</strong>: 5MB 超の大容量ファイルは Blob URL ダイレクト参照 (`URL.createObjectURL`) へ分岐し、Base64 IPC 転送による OOM クラッシュを完全防止。</li>
+            <li><strong>対数 VU メーター ＆ ピーク累積安全ガード</strong>: 100ms ピーク累積処理と有限浮動小数点ガード (`Float.isFinite()`) による針の振り切り防止。ビットパーフェクトパスでは生ソースピークがそのまま DAC レベル（ポストフェーダー判定）。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎨 8. レトロ・スキューモフィック・ハードウェアシャーシ UI ＆ 触覚ハプティクス</h2>
+        <p>ビンテージ高級オーディオ機器の質感と手応えをデジタルで再現。</p>
+        <ul>
+            <li><strong>触覚メカニカルコントロール ＆ ハプティックフィードバック</strong>: アルミ削り出しのボリュームダイヤル、3 ポジション金属トグルスイッチ操作時に連動する微細触覚振動フィードバック (`triggerHaptic` tick/click)。</li>
+            <li><strong>対称 4 ボタンミキサー行 (`STAGE`, `PHASE`, `RESTORE`, `HUM`)</strong>: プレイヤー正面パネルと完全対称なサイズ・レイアウト、および ON 時のみネオン発光するシアン・インジケーター。</li>
+            <li><strong>Bit-Perfect OSD インジケーター</strong>: ブランドロゴ直下に配置され、USB 出力かつ DSP オフ時のみ白文字で輝く `BIT PERFECT` 表示。</li>
+            <li><strong>リアルタイム アナログ VU メーター</strong>: ポストフェーダーの信号ダイナミクスを忠実に反映するデュアル・アナログ針メーター。</li>
+            <li><strong>ウッドフレームレスポンシブレイアウト</strong>: モバイル、タブレット、デスクトップの全画面サイズに対応する木目調高級シャーシデザイン。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 9. パフォーマンス ＆ リソース最適化 (V6 アーキテクチャ)</h2>
+        <p>モバイルリソースの極限効率化とアプリ堅牢性の確立。</p>
+        <ul>
+            <li><strong>スレッドプール統合・適正化</strong>: `UpnpSsdpBridge` や `MetadataCoordinator` 等の過剰なスレッドプールを総計約 30 スレッドへ適正化。</li>
+            <li><strong>コード分割 (Code Splitting)</strong>: 2.2MB のヘッドホンカタログデータを Vite `manualChunks` で独立チャンクへ分割し、初期 JS バンドルサイズを 83% 縮小。<span class="v62-tag">V6.2 再検証</span> index 346.98 kB (gzip 102.90 kB)、カタログ非同期分離維持。</li>
+            <li><strong>ゼロアロケーション・オーディオレンダリング</strong>: 非 Direct プロキシモードでの `ByteBuffer.wrap(chunk)` 採用により、毎ブロックのヒープ確保（GC スパイク）を排除。</li>
+            <li><strong>メタデータ LRU キャッシュ</strong>: MusicBrainz / Wikipedia クライアントにスレッドセーフな `LruCache` (100件) を導入し、重複 HTTP リクエストをブロック。</li>
+            <li><strong>PrewarmCache 有界 LRU</strong>: 32 エントリのプロセス全体プリウォームキャッシュ（one-shot `take()` 準拠）。キルスイッチ (`setEnabled(false)`) で再ビルドなしにレガシー取得経路へ復帰。</li>
+        </ul>
+    </section>
+
+    <section class="new-section">
+        <h2>🌙 10. ポータブル環境適応 (V6.2 新設 — 全機能実装済み)</h2>
+        <p>モバイル環境の変化（DAC 接続、ネットワーク状態、発熱、省電力）に自動適応する 5 大機能。音響アーキテクチャの純度・堅牢性は一切損なわれません。</p>
+        <ul>
+            <li><span class="v62-tag">N1</span><strong>ナイトモード（Output EQ ダイヤル統合型）</strong>:
+                <br>・<span class="feature-tag">Output EQ ダイヤル統合</span> NIGHT 位置（最終段、CRYSTAL の後）で静的ナイト EQ カーブと動的 `DynamicsCompressor` を統合 — ダイヤルを NIGHT に回すだけで完全なナイトリスニング体験。
+                <br>・<span class="feature-tag">ジェントル・ダイナミクス</span> 2:1 / −24dB / 20ms-300ms / −9dB フロア； ~10ms ランプ安全トグル； ロックフリー、ゼロアロケーション、OFF 時は純粋パススルー。
+                <br>・<span class="feature-tag">stale 状態防止</span> 全 DSP 更新で `night` を明示適用（非 NIGHT 位置では false）— ダイヤルを動かしても stale ON が残らない（tube リセットと同一パターン）。</li>
+            <li><span class="v62-tag">N2</span><strong>LUFS ラウドネス正規化</strong>:
+                <br>・<span class="feature-tag">`LoudnessAnalyzer`（純 JVM）</span> 簡易 K-weighting 近似（1-pole HPF ~40Hz ランブル除去 + 1-pole ハイシェルフ ~1.5kHz +4dB 耳感度補正 + 平均二乗）； `gain = −18（ReplayGain 2.0 基準）− 測定レベル dB`、±12dB クランプ； 無音 → 0dB 安全デフォルト。
+                <br>・<span class="feature-tag">エンドツーエンド トリガー配線</span> 音声スレッドが最初の 5 秒の raw PCM を収集（コピのみ・事前確保バッファ）→ IO プールで分析（R4 順守）→ `onLoudnessMeasured` を 1 回だけ発火（default メソッド — シグネチャ安全）→ 既存 `playbackTime` チャンネルで Web 層へ → `setTrackLoudnessDb()` が DSP ペイロードを再送し、測定ゲインを現トラックに即時適用。
+                <br>・<span class="feature-tag">新規 JNI ゼロ</span> ゲインは `updateDspInternal()` で `preampDb` に加算 — 既存 update() が更新時に `preampLin = 10^(preampDb·cs/20)` を計算（recomputeMakeup() 慣習： 更新時計算、音声スレッドは読み取りのみ）。
+                <br>・<span class="feature-tag">実測による係数バグ修正</span> 初期の逆転（減衰）係数形式が平均二乗を崩壊させた（GainProbe: 0.95 サイン波が +91.7dB = 逆方向）； 1-pole ステップ形式で正しいゲインを実証（0.95 → −12 クランプ、0.25 → −10.78、0.03 → +7.63、0.0005 → +12 クランプ）。
+                <br>・<span class="feature-tag">ビットパーフェクト純度</span> bypass ペイロードは `preampDb: 0` で `loudnessDb` を運ばないため、USB ビットパーフェクトパスは構造上無影響。</li>
+            <li><span class="v62-tag">P1</span><strong>Auto-DAC プロファイル＆プロテクトシステム</strong>:
+                <br>・<span class="feature-tag">`DacProfileStore`（SharedPreferences 永続化）</span> VID:PID キーング（ポート/シリアル除外 — 同一 DAC モデルならどのポートでもキャッシュヒット）； `load()` は無効/欠落/パース失敗で null（呼び出し側はレガシープローブ = 安全デフォルト）； `save()` は configure+start 成功後のみ（一時的失敗は記録されない、PrewarmCache 準拠）； キルスイッチで再ビルドなしに復帰。
+                <br>・<span class="feature-tag">ゼロレイテンシー再適用</span> `initUsb()` がキャッシュ済み bitDepth を `configure()` の前に再適用（レートはソース/bypass 状態に依存するため不変）。
+                <br>・<span class="feature-tag">ソフトスタート・アンチポップ・ランプ</span> `writeUsbChunk()` が 8 チャンク（~20–50ms）でゲイン 0→1 をランプ、パック前の float サンプルに適用（パック後バイトへの乗算は破壊するため）； armed 1.0 で定常状態は 1 回の整数比較、ホットパス無影響； ランプは全 USB（再）構成で再装填 — まさにポップ起きやすいドライバー (再)バインドの瞬間； AudioTrack パスは無影響（ポップは USB ドライバーリバインド固有）。ロックフリー: `AtomicInteger` を音声スレッドのみが増分（R4 順守）。</li>
+            <li><span class="v62-tag">P2</span><strong>ネットワーク耐性可変プリロール</strong>:
+                <br>・<span class="feature-tag">`LookaheadScheduler.setWindowMs()`</span> `windowMs` を volatile 化し 3000–15000ms にクランプ； デフォルト 5000ms は不変（既存テストの契約）。単一 volatile 書き込み — ロック不要、torn-read 安全、任意スレッドから安全。
+                <br>・<span class="feature-tag">`NetworkStateMonitor`</span> `registerDefaultNetworkCallback`（実績のある DualSsdpBridge パターン）でリンク品質をウィンドウへマッピング — 検証済み Wi-Fi → 5000ms（レガシーデフォルト）、検証済みセルラー → 8000ms（ハンドオーバー + 高 RTT）、劣化/未検証/リンク消失 → 12000ms（遅いオープンでもウィンドウ内に着地）。
+                <br>・<span class="feature-tag">WindowConsumer パターン</span> per-listener スケジューラーは構造的にトラックごとなので、モニターはプラグインレベルの volatile フィールドを更新し、各新トラックのスケジューラーが生成時に現在のウィンドウを採用（インスタンス初期化子）。
+                <br>・<span class="feature-tag">安全性</span> 全失敗は現在のウィンドウを維持； キルスイッチで解除 + デフォルト復帰； コールドスタートで即時適用； 音声パスには触れない。</li>
+            <li><span class="v62-tag">P3</span><strong>サーマル＆バッテリー連動スマート DSP スケーラー</strong>:
+                <br>・<span class="feature-tag">`PowerStateMonitor`</span> `OnThermalStatusChangedListener`（API 29+、ガード付き）+ `ACTION_POWER_SAVE_MODE_CHANGED` 受信； POLICY のみ — Policy enum を計算してコンシューマーへ渡す； 音声スレッド・ネイティブ・ロックには触れない。
+                <br>・<span class="feature-tag">ポリシーマッピング（純関数、JVM テスト可能）</span> 省電力 → MUTE_AMBIENCE（ハード制約、サーマルに優先）； サーマル ≥ SEVERE → MUTE_AMBIENCE（即時）； サーマル ≥ MODERATE → REDUCE_AMBIENCE（最も優しい第一段階： 最も CPU を喰う段階 — 1024-tap FIR + フィードバックテイル — の wet レベルを半減）； LIGHT/通常 → NONE（フル DSP、P3 前と完全同一）。
+                <br>・<span class="feature-tag">冷却時の正確な復元</span> `lastUserAmbIntensity` が各 DSP ペイロードからユーザー自身の ambience 強度を記憶し、デバイスが冷めたら正確に復元。
+                <br>・<span class="feature-tag">新規ネイティブ経路ゼロ</span> ポリシーは既存 `updateDsp` ペイロード経路で適用（churn ガード: 変化 < 0.5 で再送なし）； トーンシェーピング、ナイトコンプレッサー、リミッターは無影響。
+                <br>・<span class="feature-tag">キルスイッチ</span> (`setEnabled(false)`) 両リスナーを解除して NONE を通知 — 再ビルドなしに P3 前へ 1 行ロールバック（R5 準拠）。</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>© 2026 Bisen Biscene Audio Engineering. Mastered for Excellence.</p>
+    </footer>
+</body>
+</html>

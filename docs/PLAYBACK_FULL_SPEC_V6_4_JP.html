@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biscene DSPSystem V6.4 - 全技術仕様 ＆ 機能詳細</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #222; max-width: 960px; margin: 0 auto; padding: 40px 20px; background: #f4f6f8; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #111; font-size: 2.6em; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+        .version-badge { background: #00bcd4; color: white; padding: 6px 18px; border-radius: 50px; font-size: 0.38em; vertical-align: middle; position: relative; top: -12px; font-weight: 700; letter-spacing: 0.5px; }
+        .subtitle { color: #666; font-size: 1.1em; margin-top: 0; }
+        section { background: white; padding: 32px 35px; border-radius: 18px; box-shadow: 0 12px 35px rgba(0,0,0,0.04); margin-bottom: 28px; border: 1px solid #eef2f5; }
+        h2 { color: #00bcd4; border-left: 5px solid #00bcd4; padding-left: 15px; margin-top: 0; margin-bottom: 20px; font-size: 1.45em; text-transform: uppercase; letter-spacing: 0.8px; }
+        p { margin-bottom: 15px; color: #444; }
+        ul { padding-left: 22px; margin-bottom: 0; }
+        li { margin-bottom: 12px; color: #333; }
+        li:last-child { margin-bottom: 0; }
+        strong { color: #111; font-weight: 700; }
+        .feature-tag { display: inline-block; background: #e0f7fa; color: #00838f; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .v62-tag { display: inline-block; background: #1565c0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .v64-tag { display: inline-block; background: #2e7d32; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .new-section { border-left: 5px solid #1565c0; }
+        .new-section h2 { color: #1565c0; border-left: none; padding-left: 0; }
+        .gate { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 8px 12px; border-radius: 4px; display: inline-block; font-size: 0.9em; }
+        footer { text-align: center; color: #888; font-size: 0.9em; margin-top: 50px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V6.4 Production</span></h1>
+        <p class="subtitle">Night 低中域歪み根治（D1 RMS 検波化）と Info メタデータ精度改善（Phase 0/1）を統合した、次世代プロフェッショナル・ネイティブ・マスタリング・エンジン</p>
+    </header>
+
+    <section class="new-section">
+        <h2>✅ V6.3/V6.4 検証サマリー（実機測定）</h2>
+        <p>Night モード低中域歪み（D1）の根治と Info 精度改善（Phase 0 A–D）を両方とも<strong>非破壊方式</strong>で実装。実機（Huawei MAR-LX2J）で <span class="gate">NightCompressorDistortionTest 3/3 GREEN（2026-10-15 測定）</span></p>
+        <ul>
+            <li><span class="v64-tag">D1 実機ゲート</span><strong>低中域 THD</strong>: 60/120/250Hz で <strong>1.120 / 0.647 / 0.322%</strong>（修正前 5.11–5.91%、ゲート <1.5%）。peak→RMS 検波化により、音量に関係なく歪まない。</li>
+            <li><span class="v64-tag">D1 実機ゲート</span><strong>大音量抑制 ON-vs-OFF</strong>: <strong>−5.16 dB</strong>（ゲート ≤−4dB・Night の意図を維持）。</li>
+            <li><span class="v64-tag">D1 実機ゲート</span><strong>音量非依存</strong>: 出力音量 1.0/0.3/0.05 の全段階で THD <strong>0.532% 完全一致</strong>（コンプレッサーが音量段より前で動作している物理的証明）。</li>
+            <li><span class="v64-tag">性能</span>コンプレッサーステージ +0.08%（49.4ms/60s 音声・無視可能）。既存 JVM テスト 240/0/0（V6.4 追加分を含む）。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🚀 1. コア・ネイティブNDK ＆ USB ビットパーフェクト直結パイプライン</h2>
+        <p>ARM NEON SIMD 演算に最適化された 96kHz / 32-bit Float 精度マスタリング処理基盤と、AudioFlinger を完全バイパスする USB 直結 E2E ビットパーフェクト出力。</p>
+        <ul>
+            <li><strong>NEON SIMD 96kHz/32-bit Float パイプライン</strong>: 96,000Hz / 32-bit Floating Point の全マスタリングDSP処理を ARM NEON 命令で並列高速化。</li>
+            <li><strong>サンプル精度 ギャップレス再生パイプライン</strong>:
+                <br>・<span class="feature-tag">SinkCarrier 引き継ぎアーキテクチャ【検証済】</span> トラック境界でシンクを破棄せず保持。後続トラックがバッファ末尾へシームレス追記（無音隙間ゼロ）。バッファフロア 196,608 フレーム ≈ 2.048秒、SeamAudit が drained < capacityFrames で GAPLESS 判定。
+                <br>・<span class="feature-tag">LookaheadScheduler 先読みプリウォーム</span> 曲終了 5 秒前（ネットワーク状態で 5/8/12 秒に可変）に次曲を検出しデコーダーを先読み初期化。
+                <br>・<span class="feature-tag">Fade-Hold 末尾排出</span> 真の最終チャンクをフェード（最大 3ms / 288 フレーム）して全 DSP/シンク経路で排出。全トラックが正確なゼロ振幅で終了。</li>
+            <li><strong>デュアルパス 絶対位相反転（0° / 180°）</strong>:
+                <br>・<span class="feature-tag">DSP ON モード【検証済】</span> C++/NDK 層（<code>nativeSetPhaseInverted</code>）で ~1ms クロスフェードのノイズフリー反転。
+                <br>・<span class="feature-tag">DSP OFF モード【検証済】</span> <code>JavaPhaseInverter</code> が USB パッキング直前の生 PCM を反転（ビット深度・SR 完全保持）。</li>
+            <li><span class="v64-tag">V6.3 D1</span><strong>ナイトモード・ダイナミクス・コンプレッサー（RMS 検波化）</strong>:
+                <br>・<span class="feature-tag">RMS フィードフォワード検波</span> mean-square ~5ms 平滑。1周期内でゲインが変動しないため低中域 AM 歪みが原理的に発生しない（THD 5.9% → 0.32–1.12% 実測）。
+                <br>・<span class="feature-tag">契約不変</span> 2:1 / −24dB / 20ms-300ms / −9dB フロア / ~10ms ランプトグル / kill-switch はすべて不変。無効時はビット透過パススルー（max|diff|=0 実測）。
+                <br>・<span class="feature-tag">ロックフリー＆ゼロアロケーション</span> R4 完全順守（新規 atomic ゼロ）。</li>
+            <li><strong>4点 Catmull-Rom リニアフェーズ・リサンプラー（RateConverter）【検証済】</strong>:
+                <br>・時間対称 4 点カーネルで線形位相・プリリンギング完全排除。WAV 44.1kHz 供給粒度問題は pipelineBuf 73,728 floats 拡大で根治済み。</li>
+            <li><strong>USB 直結出力モード（AudioFlinger バイパス）</strong>:
+                <br>・<span class="feature-tag">DSP オフ（E2E ビットパーフェクト）</span> SR・ビット深度・生 PCM を 100% ビットエグザクトで DAC へ直送。
+                <br>・<span class="feature-tag">DSP オン（96kHz/32-bit ＆ 24bit 自動フォールバック）</span> DAC が 32-bit 非対応時は 24-bit へ自動ダウングレード。</li>
+            <li><strong>Direct NDK Isochronous USB エンジン</strong>:
+                <br>・C++/NDK から Linux ioctl で等時性 URB を直接送信。<code>USBDEVFS_DISCONNECT_CLAIM</code> によるカーネルドライバ動的デタッチ／再結合。UAC1/UAC2 デスクリプタ解析。ソフトスタート・アンチポップランプ（8 チャンク ~20–50ms）。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🌊 2. 空間音響 ＆ 5x5 バーチャルアコースティック・マトリクス</h2>
+        <ul>
+            <li><strong>Unity-Gain クロスフィード（Woodworth ITD）【検証済】</strong>: 6 段階角度ダイヤル（OFF/15°/30°/45°/60°/90°）。0.26 固定クロスフィード係数・直接経路 1.0（バイパス対比レベル損失ゼロ）。サブサンプル精度分数遅延＋線形補間。</li>
+            <li><strong>球面ヘッドシャドウイング</strong>: クロストーク成分のみに周波数依存 ILD を適用するネイティブ IIR シェルビング。</li>
+            <li><strong>距離制御 Intelligence【検証済】</strong>: OFF / INTIMATE / NEAR / NORMAL / FAR / DEEP。近接効果・空気吸収・envL/envR 補正を同一 5x5 パスで適用。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🏛️ 3. アンビエンス ＆ 実 FIR 畳み込みエンジン</h2>
+        <ul>
+            <li><strong>ハイブリッド FIR 畳み込み＋フィードバックテール</strong>: 1024-tap NEON 最適化早期反射 FIR + 4-comb / 2-allpass 拡散テール（RT60 ルームプリセット連動）。</li>
+            <li><span class="v64-tag">V6.4</span><strong>IR 強度マッピング更新</strong>: UI 0–100 → wet 0–<strong>33.3%</strong>（除数 /300・旧 /400=25% から +33%）。実機測定 <span class="gate">i=100 → 0.6667 理論値と完全一致</span>。dry 側係数 (1−amb) は常に正・TruePeakLimiter が後段で安全担保。P3 サーマル半減は UI スケールで動作し無矛盾。</li>
+            <li><strong>ゼロコピー高速パス</strong>: irId 安定識別子でメモリ再確保なしの即時強度/減衰チューニング（fast-path は atomic のみ）。</li>
+            <li><strong>IR アセットカタログ</strong>: Studio Hall / Jazz Club / Large Bottle Hall / St. Nicolaes Church（V4.5.8: 先頭無音トリム + 0.9/√エネルギー正規化）。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🔧 4. 高忠実度レストレーション・物理モデリング・パラメトリック EQ</h2>
+        <ul>
+            <li><strong>Restoration Engine</strong>: 高調波外挿（24–32kHz 再構築）/ トランジェント パンチ / デプリエコー。</li>
+            <li><strong>チューブ物理モデリング</strong>: Triode 300B（非対称 2次高調波）/ Pentode KT88（対称飽和）/ 電源サグ。Output EQ ダイヤルの TUBE 位置は NIGHT に交代済み、ミキサー TUBE WARMTH トグルで全機能利用可。</li>
+            <li><strong>3段 EQ ＆ キャリブレーション</strong>: Source EQ / Band EQ / Output EQ。Output EQ ダイヤル 7 段階（OFF/STUDIO/JBL/PLANAR/LOUD/CRYSTAL/NIGHT）。AutoEQ データベース（Crinacle & Oratory1990）。</li>
+        </ul>
+    </section>
+
+    <section class="new-section">
+        <h2>📚 5. 百科事典的メタデータ ＆ リスニング Wiki ハブ（V6.4 Phase 0/1 完了）</h2>
+        <ul>
+            <li><span class="v64-tag">Phase 0-A</span><strong>MB スコアリング照合</strong>: TopN 候補を artist40+title40+duration15+country5 で採点（Levenshtein＋ダイアクリティクス正規化）。<code>MIN_SCORE=55</code> 未満は棄権（誤特定より空表示）。</li>
+            <li><span class="v64-tag">Phase 0-B</span><strong>MBID 永続キャッシュ</strong>: 確定 recording/release/artist MBID を SharedPreferences に保存。再訪時は検索スキップで直接詳細取得（速い・確実・API 負荷減）。kill-switch 付き。</li>
+            <li><span class="v64-tag">Phase 0-C</span><strong>Discogs LRU 上限</strong>: 3 キャッシュを cap=200 の同期 LinkedHashMap LRU に置換（メモリ安全・挙動不変）。</li>
+            <li><span class="v64-tag">Phase 0-D + UI</span><strong>ユーザー PIN 訂正</strong>: Info モーダルに「Wrong match?」導線を追加。No info（棄権）/ Set MBID（正しい録音を指定）を永続保存し、次回以降の enrich に最優先適用。</li>
+            <li><span class="v64-tag">Phase 1-E</span><strong>CoverArtArchive ジャケット</strong>: MB release-id から CAA front cover を取得（キー不要）。フォールバック順: 埋込 → フォルダ → <strong>CAA</strong> → iTunes。失敗時は即座に既存経路（非破壊）。</li>
+            <li><span class="v64-tag">Phase 1-F</span><strong>MB 収録項目拡張（新規 API 呼び出しゼロ）</strong>: ISRC・初出年・カタログ番号・トラックリストを既存レスポンスから抽出し Info UI に追加表示。</li>
+            <li><span class="v64-tag">Phase 1-G</span><strong>Wikidata 典拠</strong>: MB artist url-rels の QID から生没年・楽器・公式サイト・画像を取得し bio の裏付けに（キー不要・多言語 bio の土台）。</li>
+            <li><span class="v64-tag">V6.4 修正</span><strong>Signal タブ Native Resolution</strong>: ローカル再生でも format/srcRate/srcBits が Web に届くよう productionInfo を拡張（旧: renderer 時のみ送信で常に "Detecting..."）。表示専用・音声経路無影響。</li>
+            <li><strong>多層アートパイプライン</strong>: 埋込タグ → ローカルフォルダ → CAA → iTunes Search API。NativeImage 遅延ロードでメインカバーを保護。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📡 6. OpenHome ＆ UPnP/DLNA DMR ネットワーク・アーキテクチャ</h2>
+        <ul>
+            <li><strong>OpenHome レンダラー完全準拠</strong>: oh_product / oh_playlist / oh_transport / oh_volume / oh_info / oh_time。Linn Kazoo / BubbleUPnP 等と互換。</li>
+            <li><strong>SSDP デュアルブリッジ【検証済】</strong>: 単一ポート 1900 で DMR+OpenHome を同時アドバタイズ。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🔋 7. バックグラウンド実行 ＆ システム整合性</h2>
+        <ul>
+            <li><strong>バックグラウンド再生</strong>: アクティブ再生時は Activity 終了でもプロセスを維持。※V6.4: instrumentation 実行中は自己 kill を抑制（実機計測安定化・本番動作は不変）。</li>
+            <li><strong>USB ホットプラグ / Media3 / バッテリー最適化保護</strong>: PARTIAL_WAKE_LOCK、Wi-Fi 高性能ロック、SAF 深掘り、VU メーター ピーク蓄積安全。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎛️ 8. レトロ スケウモーフィック筐体 UI ＆ 触覚フィードバック</h2>
+        <ul>
+            <li><strong>触覚メカニカル操作</strong>: 加工金属ダイヤル・3 段トグル・アルミパネル + 触覚ハプティクス（tick/click/heavy）。</li>
+            <li><strong>リアルタイム VU アナログメーター ＆ Bit-Perfect OSD</strong>: ポストフェーダー対数 VU、BIT PERFECT インジケーター。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 9. パフォーマンス ＆ リソース最適化</h2>
+        <ul>
+            <li><strong>統合スレッドプール（約 30 スレッド）</strong> / <strong>コード分割</strong>: 2.2MB ヘッドホンカタログを非同期チャンク分離（初期 JS 350.66 kB / gzip 103.68 kB）。</li>
+            <li><strong>ゼロアロケーション描画ループ</strong> / <strong>メタデータ LRU</strong> / <strong>PrewarmCache 32 エントリ</strong>。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎒 10. ポータブル環境適応（V6.2 — 全実装）</h2>
+        <ul>
+            <li><strong>N1 ナイトモード</strong>: Output EQ ダイヤル統合 + DynamicsCompressor（V6.3 D1 RMS 化・V6.4 実機 3 ゲート Green で最終確定）。</li>
+            <li><strong>N2 ラウドネス正規化</strong>: K-weighting 簡易近似 + トリガー配線（ GainProbe 実測でフィルタ係数バグ修正済み）。</li>
+            <li><strong>P1 Auto-DAC プロファイル＆プロテクト</strong> / <strong>P2 ネットワーク耐性可変プリロール（5/8/12秒）</strong> / <strong>P3 サーマル＆バッテリー連動 DSP スケーラー</strong>（冷却時 lastUserAmbIntensity で正確復元）。</li>
+            <li>全機能に kill-switch（<code>setEnabled(false)</code>）を備え、再ビルド不要で即 legacy 動作へ復帰（R5 準拠）。</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🛡️ 安全ルール（R1–R5）</h2>
+        <ul>
+            <li><strong>R1 Bit-Perfect</strong>: DSP OFF 時 100% Bit-Exact 直通。定常状態でゲイン変更ゼロ。</li>
+            <li><strong>R2 Gapless</strong>: トラック境界のサンプル精度・位相連続。</li>
+            <li><strong>R3 True-Peak</strong>: 4× FIR オーバーサンプリング + 1ms ルックアヘッドで ISP 捕捉（threshold 0.98）。</li>
+            <li><strong>R4 Lock-Free</strong>: 音声スレッドに新規 lock/heap/syscall を増やさない。</li>
+            <li><strong>R5 Kill-Switch</strong>: 全機能に即時 legacy 復帰導線。</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>Biscene DSPSystem V6.4 Production — 2026-10-16 更新｜詳細は PLAYBACK_FULL_SPEC_V6_4.md（正本）を参照</p>
+    </footer>
+</body>
+</html>

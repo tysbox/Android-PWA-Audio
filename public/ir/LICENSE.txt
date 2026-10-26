@@ -1,0 +1,26 @@
+Impulse Response files in this folder:
+- hall.wav
+- jazz_club.wav
+- large_bottle_hall.wav
+- st_nicolaes_church.wav
+
+Source: Voxengo Free Reverb Impulse Responses
+Original: http://www.voxengo.com/impulses/
+Mirror used: https://github.com/oramics/sampled (IR/Voxengo/samples/)
+
+Processing applied to the originals:
+1. Resampled from 44.1kHz to 48kHz to match this app's fixed CamillaDSP
+   pipeline samplerate.
+2. Energy-normalized (scaled so sum-of-squares per channel ~= 1, i.e. ~0dB
+   convolution gain) plus an additional 6dB safety headroom. The originals
+   were peak-normalized to ~0dB but had convolution ENERGY of +14dB to
+   +24dB -- peak level alone does not indicate convolution gain, which
+   depends on the impulse's total energy. Using the un-normalized files
+   caused massive, unintended level boosts when convolved with program
+   material.
+
+License (as stated by the distributor, Aleksey Vaneev / Voxengo):
+"Permission is granted to anyone to use these impulse files royalty-free
+for any purpose, including commercial usage. You may not sell these
+impulse files or earn any direct or indirect profit from their
+distribution [as standalone impulse response files]."

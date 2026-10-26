@@ -1,0 +1,33 @@
+{
+  "short_name": "Biscène",
+  "name": "Biscène Audio System",
+  "description": "Real-time DSP audio player with 5-stage mixture engine and machined hardware aesthetics.",
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ],
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["music", "audio", "utilities"]
+}

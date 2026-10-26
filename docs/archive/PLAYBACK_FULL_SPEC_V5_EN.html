@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biscene DSPSystem V5 - Complete Technical Specifications</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #222; max-width: 960px; margin: 0 auto; padding: 40px 20px; background: #fafafa; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #111; font-size: 2.8em; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+        .version-badge { background: #00bcd4; color: white; padding: 6px 18px; border-radius: 50px; font-size: 0.38em; vertical-align: middle; position: relative; top: -14px; font-weight: 700; letter-spacing: 0.5px; }
+        .subtitle { color: #666; font-size: 1.1em; margin-top: 0; }
+        section { background: white; padding: 35px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.04); margin-bottom: 30px; border: 1px solid #f0f0f0; }
+        h2 { color: #00bcd4; font-weight: 700; margin-top: 0; margin-bottom: 25px; font-size: 1.45em; text-transform: uppercase; letter-spacing: 1px; }
+        p { margin-bottom: 15px; color: #444; }
+        ul { padding-left: 22px; margin-bottom: 0; }
+        li { margin-bottom: 12px; color: #333; }
+        li:last-child { margin-bottom: 0; }
+        strong { color: #000; font-weight: 700; }
+        .feature-tag { display: inline-block; background: #e0f7fa; color: #00838f; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        footer { text-align: center; color: #aaa; font-size: 0.88em; margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V5 Complete</span></h1>
+        <p class="subtitle">The Definitive Professional Native Mastering Engine for Next-Generation Audio</p>
+    </header>
+
+    <section>
+        <h2>🚀 1. CORE NATIVE NDK & BIT-PERFECT USB DIRECT PIPELINE</h2>
+        <p>High-performance audio processing architecture optimized for ARM NEON SIMD architecture at 96kHz / 32-bit Floating Point resolution with bit-perfect USB AudioFlinger bypass.</p>
+        <ul>
+            <li><strong>NEON SIMD 96kHz / 32-bit Float Pipeline</strong>: Complete 96,000Hz / 32-bit Floating Point mastering DSP chain, accelerated with ARM NEON SIMD intrinsics for 4x parallel execution.</li>
+            <li><strong>Sample-Accurate Gapless Playback Pipeline</strong>:
+                <br>・<span class="feature-tag">`SinkCarrier` Handover Architecture</span> Retains active output audio sinks (`AudioTrack` / USB Direct) across track boundaries, enabling successor tracks to append PCM samples behind preceding buffer tails with zero millisecond gap or click.
+                <br>・<span class="feature-tag">`LookaheadScheduler` Pre-warming</span> Probes upcoming playlist items 5 seconds prior to track completion (`DEFAULT_WINDOW_MS = 5000L`), pre-warming decoders (`PrewarmCache`) to guarantee zero-latency seamless track transitions.</li>
+            <li><strong>Dual-Path Absolute Phase Control (0° Normal / 180° Phase Reverse)</strong>:
+                <br>・<span class="feature-tag">DSP ON Mode</span> Native C++/NDK implementation (`NativeDspChain` - `nativeSetPhaseInverted`) featuring a ~1ms cross-fade for click-free 180° polarity reversal.
+                <br>・<span class="feature-tag">DSP OFF Mode</span> `JavaPhaseInverter` non-destructively flips raw PCM sample polarity immediately prior to USB packing, maintaining bit-depth and sample-rate integrity on bit-perfect paths.</li>
+            <li><strong>4-Point Catmull-Rom Linear-Phase Resampler (`RateConverter`)</strong>:
+                <br>・<span class="feature-tag">Catmull-Rom Cubic Spline Interpolation</span> High-precision 4-point ($p_0, p_1, p_2, p_3$) cubic spline resampling up to 96kHz.
+                <br>・<span class="feature-tag">Linear Phase & Zero Pre-Ringing</span> Time-symmetric polynomial kernel providing linear phase response, zero group delay distortion, and complete elimination of pre-ringing artifacts (pre-echos) for pristine attack transient preservation.</li>
+            <li><strong>Bit-Perfect USB Direct Output (AudioFlinger Bypass)</strong>:
+                <br>・<span class="feature-tag">Direct NDK Isochronous Engine</span> Direct C++/NDK USB driver submitting raw Isochronous URBs (`USBDEVFS_URB_TYPE_ISO`) via Linux `ioctl` interface, bypassing Android `AudioFlinger` and system resampler.
+                <br>・<span class="feature-tag">Dynamic Driver Claim & Re-binding</span> Atomically detaches Android's default `snd-usb-audio` driver via `USBDEVFS_DISCONNECT_CLAIM` upon DAC acquisition, and re-binds system drivers (`USBDEVFS_CONNECT`) upon release for seamless system audio recovery.
+                <br>・<span class="feature-tag">UAC1 / UAC2 Descriptor Parsing</span> Parses USB Audio Class 1 and Class 2 descriptor structures to automatically detect supported sample rates, channel configurations, and bit resolutions.
+                <br>・<span class="feature-tag">Bit-Exact Pure Pass-Through (DSP OFF)</span> When DSP processing is disabled, audio stream PCM is delivered directly to the external USB DAC bit-for-bit with zero resampling, zero gain alteration, and zero word-length truncation.
+                <br>・<span class="feature-tag">Smart Hardware Capability Adaptation</span> Auto-caps and packs PCM subframes (16-bit / 24-bit / 32-bit via `UsbPcmPacker`) based on DAC descriptor caps, ensuring full compatibility across external high-resolution DACs.</li>
+            <li><strong>Triple Output Architecture</strong>:
+                <br>・<span class="feature-tag">USB Direct Mode</span> Raw file descriptor USB Isochronous transmission directly to external USB DACs (`UsbDirectEngine`).
+                <br>・<span class="feature-tag">System Direct Mode</span> Audio track configured natively at `96,000Hz / ENCODING_PCM_FLOAT`, directly fed from `BiscenePlayerV2` and `NativeDspChain`.
+                <br>・<span class="feature-tag">HTTP Proxy Mode</span> Embedded HTTP streaming endpoint (`http://127.0.0.1:9600/pcm`) providing real-time 32-bit Float PCM output.</li>
+            <li><strong>Lock-Free Zero-Allocation Audio Thread</strong>: Strict lock-free and allocation-free audio processing thread eliminating audio dropouts and buffer underflows.</li>
+            <li><strong>True Peak Safety Limiter</strong>: Final mastering stage featuring 4x FIR oversampling and 1.0ms lookahead to eliminate Inter-Sample Peak (ISP) DAC clipping.</li>
+            <li><strong>Hi-Res Audio & Native DSD Decoder</strong>: Native 1-bit DSD stream decoding (`.dsf`, `.dff`) via `DsfDecoderV2` alongside FLAC, WAV, ALAC, AAC, MP3, and M4A formats with integrated `RateConverter`.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📐 2. SPATIAL & VIRTUAL ACOUSTIC MATRIX (5x5)</h2>
+        <p>A sophisticated 5x5 spatial acoustic matrix based on physical head modeling and psychoacoustic propagation.</p>
+        <ul>
+            <li><strong>Woodworth ITD Model</strong>: Sub-sample accurate fractional delay line soundstage azimuth control (15° to 90°).</li>
+            <li><strong>Spherical Head Shadowing</strong>: Frequency-dependent Inter-aural Level Difference (ILD) emulation via native IIR shelving filters.</li>
+            <li><strong>Distance Control Intelligence</strong>:
+                <br>・<span class="feature-tag">Proximity Effect</span> Low-frequency spherical wave boost for near-field listening.
+                <br>・<span class="feature-tag">Air Absorption</span> High-frequency atmospheric attenuation modeling for far-field acoustics.</li>
+            <li><strong>Virtual Acoustic Absorption Profiles</strong>: Preset physical acoustic boundary profiles for Studio, Wood, and Glass material absorption.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🏛️ 3. AMBIENCE & REAL FIR CONVOLUTION ENGINE</h2>
+        <p>Real-time impulse response (IR) room acoustic convolution and tail synthesis.</p>
+        <ul>
+            <li><strong>Hybrid FIR Convolution + Feedback Tail</strong>: 1024-tap NEON-optimized early reflection FIR convolution combined with 4-comb / 2-allpass feedback decay networks.</li>
+            <li><strong>Zero-Copy Fast Path (`irId`)</strong>: Stable identifier architecture providing zero-lock, zero-allocation real-time intensity and decay retuning.</li>
+            <li><strong>Measured Impulse Response Catalog</strong>: Pre-loaded real-world acoustic spaces including Studio Hall, Jazz Club, Large Bottle Hall, and St. Nicolaes Church.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 4. TUBE PHYSICAL MODELING, HI-FI RESTORATION & EQ</h2>
+        <p>Physical tube circuit modeling, dynamic lossy harmonic reconstruction, and multi-band parametric equalization.</p>
+        <ul>
+            <li><strong>Hi-Fi Restoration Engine</strong>:
+                <br>・<span class="feature-tag">Harmonic Extrapolation</span> FFT-based reconstruction of high-frequency harmonics (24kHz–32kHz) lost in compressed sources.
+                <br>・<span class="feature-tag">Transient Punch</span> Wavelet-based attack slope sharpening.
+                <br>・<span class="feature-tag">De-Pre-Echo</span> Dynamic suppression of digital pre-ringing artifacts.</li>
+            <li><strong>Tube Physical Modeling</strong>:
+                <br>・<span class="feature-tag">Triode (300B)</span> Asymmetric transfer function emphasizing lush 2nd-order harmonics.
+                <br>・<span class="feature-tag">Pentode (KT88)</span> Symmetrical saturation for punchy dynamic response.
+                <br>・<span class="feature-tag">Power Supply Sag</span> Real-time B+ voltage drop simulation under transient load.</li>
+            <li><strong>Multi-Band Parametric EQ & Calibration</strong>:
+                <br>・3-stage equalization: Source EQ, Band EQ, and Output EQ.
+                <br>・Selective 50Hz / 60Hz power grid hum notch suppression.
+                <br>・Integrated 2.2MB Headphone AutoEQ database (Crinacle & Oratory1990) with parametric curve editor and real-time total curve graph.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📖 5. ENCYCLOPEDIC METADATA & LISTENING WIKI HUB</h2>
+        <p>Automated deep metadata enrichment, audio fingerprinting, and production lineage tracking.</p>
+        <ul>
+            <li><strong>Multi-Tiered Metadata Enrichment Pipeline</strong>:
+                <br>1. <span class="feature-tag">AcoustID</span> Audio fingerprinting for instant automatic track identification.
+                <br>2. <span class="feature-tag">MusicBrainz & Discogs</span> Automatic extraction of deep production credits (Producer, Recording Engineer, Studio, Master Specs, Record Label).
+                <br>3. <span class="feature-tag">Wikipedia</span> Musician biography context and disambiguation for band members and session personnel.</li>
+            <li><strong>Unified Album Art Provider</strong>: Multi-stage artwork extraction pipeline (Embedded tags -> Local folder art -> NAS UPnP metadata -> iTunes Search API synchronous/async fallback).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🌐 6. OPENHOME & UPnP/DLNA DMR NETWORK ARCHITECTURE</h2>
+        <p>Full-featured network audio integration for audiophile control points and NAS devices.</p>
+        <ul>
+            <li><strong>Complete OpenHome Renderer Profile</strong>:
+                <br>・Full implementation of `oh_product`, `oh_playlist`, `oh_transport`, `oh_volume`, `oh_info`, and `oh_time` services.
+                <br>・Automatic queue advancement on track completion (`advanceAfterNaturalEnd()`), `Move`, `ReadList`, `Insert`, `DeleteId`, and `IdArray` base64 state synchronization.
+                <br>・Seamless compatibility with Linn Kazoo, Linn App, BubbleUPnP, Twonky, and Soundgenic NAS devices.</li>
+            <li><strong>UPnP AV DMR (Digital Media Renderer)</strong>: Complete `AVTransport` and `RenderingControl` service implementation.</li>
+            <li><strong>Dual SSDP Bridge</strong>: Simultaneous local network multicast discovery for both UPnP AV DMR and OpenHome Renderer device descriptions.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🛡️ 7. BACKGROUND EXECUTION & DETERMINISTIC SYSTEM INTEGRITY</h2>
+        <p>Robust process protection preventing Android OS power saver or task manager interruptions.</p>
+        <ul>
+            <li><strong>USB Audio Hotplug Manager (`UsbAudioDetector`)</strong>:
+                <br>・Monitors USB hotplug broadcast events (`ACTION_USB_DEVICE_ATTACHED` / `DETACHED`) to seamlessly acquire raw file descriptors for connected USB DACs.</li>
+            <li><strong>Android Media3 `PlaybackService`</strong>: Integrated `MediaSessionService` providing system lockscreen media controls, quick settings tile, and Bluetooth headset operations (Play/Pause/Next/Prev/Seek).</li>
+            <li><strong>Power Saver Protection Architecture</strong>:
+                <br>・<span class="feature-tag">PARTIAL_WAKE_LOCK</span> Dedicated per-playback CPU wake lock (`DSP:PlayerV2ThreadLock`) holding execution priority during screen-off and Android Power Saver / Save Mode.
+                <br>・<span class="feature-tag">WifiLock & MulticastLock</span> High-performance Wi-Fi lock (`WIFI_MODE_FULL_HIGH_PERF`) and UPnP multicast lock.</li>
+            <li><strong>Storage Access Framework (SAF)</strong>: SAF directory picker (`pickLocalFolder`), MediaStore import, and document tree crawling for local music playback.</li>
+            <li><strong>Logarithmic VU Meter & Peak Accumulation Safety</strong>: Post-fader logarithmic VU meters with 100ms peak accumulation and finite float guards (`Float.isFinite()`) preventing needle overflow.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎨 8. RETRO SKEUOMORPHIC HARDWARE CHASSIS UI & TACTILE HAPTICS</h2>
+        <p>Tactile vintage audio hardware aesthetics crafted for intuitive modern mobile touchscreens.</p>
+        <ul>
+            <li><strong>Tactile Mechanical Controls & Haptic Feedback</strong>: Machined metal volume dials, 3-position toggle switches, and brushed aluminum chassis panels with integrated tactile vibration feedback (`triggerHaptic` tick/click).</li>
+            <li><strong>Real-Time Dual Analog VU Meters</strong>: Dual-channel analog-style needle meters accurately reflecting post-fader signal dynamics.</li>
+            <li><strong>Custom Responsive Layout</strong>: Adaptive layout supporting mobile, tablet, and desktop viewports framed with vintage wood-grain side panels.</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>© 2026 Bisen Biscene Audio Engineering. Mastered for Excellence.</p>
+    </footer>
+</body>
+</html>

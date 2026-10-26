@@ -1,0 +1,10 @@
+{
+  "name": "Biscène Audio",
+  "description": "Real-time DSP audio player with 5-stage mixture engine (Source EQ, Output EQ, Hum Filter, Ambience Reverb, Crossfeed), dual VU meters, and machined metal/wood hardware aesthetics.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

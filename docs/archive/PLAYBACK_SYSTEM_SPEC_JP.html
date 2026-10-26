@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Biscene DSPSystem - 再生エンジン仕様書</title>
+<style>
+:root {
+    --primary: #2c3e50;
+    --secondary: #34495e;
+    --accent: #3498db;
+    --accent-dark: #2980b9;
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --text: #2c2c2c;
+    --text-muted: #666;
+    --border: #e0e0e0;
+    --code-bg: #f4f4f4;
+    --table-header: #2c3e50;
+    --table-header-text: #fff;
+    --ok: #27ae60;
+    --ng: #e74c3c;
+    --warn: #f39c12;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", YuGothic, sans-serif;
+    line-height: 1.7;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px;
+}
+h1, h2, h3, h4 { color: var(--primary); font-weight: 600; line-height: 1.3; }
+h1 { font-size: 2.2rem; border-bottom: 3px solid var(--accent); padding-bottom: 12px; margin-bottom: 24px; }
+h2 { font-size: 1.6rem; margin-top: 40px; margin-bottom: 16px; padding-left: 12px; border-left: 4px solid var(--accent); }
+h3 { font-size: 1.3rem; margin-top: 28px; margin-bottom: 12px; }
+h4 { font-size: 1.1rem; margin-top: 20px; margin-bottom: 10px; color: var(--secondary); }
+p { margin-bottom: 16px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+}
+pre {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.token.comment { color: #6272a4; }
+.token.keyword { color: #ff79c6; }
+.token.function { color: #50fa7b; }
+.token.string { color: #f1fa8c; }
+.token.number { color: #bd93f9; }
+.token.operator { color: #ff79c6; }
+.token.punctuation { color: #f8f8f2; }
+ul, ol { margin: 12px 0 16px 24px; }
+li { margin-bottom: 6px; }
+li > ul, li > ol { margin-top: 6px; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background: var(--card-bg);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-radius: 8px;
+    overflow: hidden;
+}
+th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+th {
+    background: var(--table-header);
+    color: var(--table-header-text);
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) td { background: #fafafa; }
+tr:hover td { background: #f0f7ff; }
+.diagram {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 16px;
+    border-radius: 8px;
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 16px 0;
+    white-space: pre;
+}
+hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+blockquote {
+    border-left: 4px solid var(--accent);
+    padding: 12px 20px;
+    margin: 16px 0;
+    background: #f0f7ff;
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+    color: var(--secondary);
+}
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.badge-ok { background: #e8f8f0; color: var(--ok); }
+.badge-ng { background: #fdf0f0; color: var(--ng); }
+.badge-warn { background: #fef9e7; color: var(--warn); }
+.badge-partial { background: #fef5e7; color: #e67e22; }
+.section-meta {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+.toc {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 32px;
+}
+.toc h2 { margin-top: 0; font-size: 1.2rem; border: none; padding: 0; }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 6px 0; }
+.toc a { color: var(--secondary); }
+.toc a:hover { color: var(--accent); }
+.toc ul ul { margin-left: 20px; font-size: 0.9rem; color: var(--text-muted); }
+.arch-diagram {
+    background: linear-gradient(135deg, #f8f9fa 0%, #eef2f5 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    font-family: "SF Mono", "Fira Code", "Monaco", Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+}
+@media print {
+    body { background: white; padding: 0; max-width: none; }
+    h1, h2, h3, h4 { break-after: avoid; }
+    table { break-inside: auto; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    pre, .diagram { break-inside: avoid; }
+    .toc { display: none; }
+    .no-print { display: none; }
+}
+.footer-note { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<nav class="toc no-print">
+<h2>📑 目次</h2>
+<ul>
+<li><a href="#overview">概要</a></li>
+<li><a href="#architecture">アーキテクチャ全景</a></li>
+<li><a href="#core-features">核心差別化機能</a>
+<ul>
+<li><a href="#bitperfect">1. ビットパーフェクト・ハイレゾ再生</a></li>
+<li><a href="#dsp-pipeline">2. 96kHz Float32 固定レート DSP パイプライン</a></li>
+<li><a href="#session-isolation">3. セッション分離・ギャップレス遷移</a></li>
+<li><a href="#background-resilience">4. バックグラウンド/スリープ/Doze 完全耐性</a></li>
+<li><a href="#dsf-native">5. DSF (DSD) ネイティブストリーミングデコード</a></li>
+<li><a href="#saf-native">6. SAF ネイティブファイル再生</a></li>
+</ul>
+</li>
+<li><a href="#specs">技術スペック</a></li>
+<li><a href="#advantages">競合優位性</a></li>
+<li><a href="#limitations">既知の制限・今後の拡張</a></li>
+<li><a href="#requirements">ビルド・動作要件</a></li>
+<li><a href="#license">ライセンス・クレジット</a></li>
+</ul>
+</nav>
+
+<h1 id="overview">Biscene DSPSystem - 再生エンジン仕様書</h1>
+
+<h2 id="architecture">アーキテクチャ全景</h2>
+
+<div class="arch-diagram">┌─────────────────────────────────────────────────────────────────┐
+│  Web Layer (React/TypeScript)                                    │
+│  ├─ PlayerControls, AudioEngine.ts, LocalBrowserModal...        │
+│  └─ Capacitor Bridge (DlnaPlayback Plugin)                      │
+├─────────────────────────────────────────────────────────────────┤
+│  Native Layer (Kotlin/Java)                                      │
+│  ├─ DlnaPlaybackPlugin (Capacitor Plugin)                       │
+│  │   ├─ LocalPcmServer (HTTP/127.0.0.1:9600)                    │
+│  │   └─ DecodingThread (per-session)                            │
+│  │       ├─ MediaCodec Path (FLAC/WAV/MP3/AAC/ALAC...)          │
+│  │       └─ DsfDecoder Path (DSD/DSF)                           │
+│  ├─ DSP Pipeline (96kHz Float32 Fixed-Rate)                     │
+│  │   ├─ RateConverter (Catmull-Rom, stereo interleaved)         │
+│  │   └─ NativeDspChain (Biquad EQ, Crossfeed, Freeverb, Tube)  │
+│  ├─ AudioTrack (96kHz/Float32/Stereo, MODE_STREAM)              │
+│  └─ PlaybackService (Foreground Service)                        │
+│       ├─ PARTIAL_WAKE_LOCK (CPU alive)                          │
+│       └─ WIFI_MODE_FULL_HIGH_PERF (Network alive)               │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+<h2 id="core-features">核心差別化機能</h2>
+
+<h3 id="bitperfect">1. ビットパーフェクト・ハイレゾ再生 (全形式)</h3>
+
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>デコーダ出力</th>
+<th>内部処理</th>
+<th>出力</th>
+<th>ビットパーフェクト</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FLAC/WAV 16bit</td>
+<td>PCM_16BIT</td>
+<td>→ Float32 正規化</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span></td>
+</tr>
+<tr>
+<td>FLAC/WAV 24bit</td>
+<td>PCM_32BIT (Right-aligned 24bit)</td>
+<td><strong>アライメント自動検出→正規化</strong></td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span> <strong>業界初相当</strong></td>
+</tr>
+<tr>
+<td>FLAC/WAV 32bit</td>
+<td>PCM_32BIT / Float32</td>
+<td>直通</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span></td>
+</tr>
+<tr>
+<tr>
+<td>DSF (DSD64/128)</td>
+<td>DSD→PCM (Boxcar decimation)</td>
+<td>96kHz リサンプル</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-partial">~</span> DSD→PCM変換段階で不可避</td>
+</tr>
+<tr>
+<td>MP3/AAC/OPUS...</td>
+<td>PCM_16BIT</td>
+<td>→ Float32 正規化</td>
+<td>96kHz Float32</td>
+<td><span class="badge badge-ok">OK</span> (ロスレス相当)</td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>技術的ポイント</strong>:</p>
+<ul>
+<li><code>convertToFloat32Array()</code> における <strong>実データからの 24bit アライメント自動検出</strong> (符号拡張ヒューリスティック)</li>
+<li><code>srcBits</code> ヒント非依存、Right-aligned/Left-aligned 両対応</li>
+<li>Float sanity gate による <strong>ベンダーデコーダの Float 出力バグ自動検知・フォールバック</strong></li>
+</ul>
+
+<h3 id="dsp-pipeline">2. 96kHz Float32 固定レート DSP パイプライン (CamillaDSP 風)</h3>
+
+<div class="diagram">入力 (任意レート) → RateConverter (Catmull-Rom) → 96kHz Float32
+                                                     ↓
+                                              ┌────┴────┐
+                                              │ NativeDspChain │
+                                              ├──────────────┤
+                                              │ Preamp        │
+                                              │ Hum Filter (50/60Hz) │
+                                              │ Source EQ (Parametric) │
+                                              │ Output EQ (Parametric) │
+                                              │ Calibration Biquads │
+                                              │ Crossfeed (Meier) │
+                                              │ Tube Saturation │
+                                              │ Ambience (Freeverb + IR) │
+                                              │ Soft-knee Limiter │
+                                              └──────────────┘
+                                                     ↓
+                                            AudioTrack (96kHz Float32)</div>
+
+<p><strong>特徴</strong>:</p>
+<ul>
+<li><strong>単一レート処理</strong>: 全エフェクトが 96kHz で動作、リサンプルアーティファクト最小化</li>
+<li><strong>リアルタイムパラメータ更新</strong>: <code>updateDsp()</code> で係数再計算しつつフィルタ状態維持</li>
+<li><strong>IR ベースアンビエンス</strong>: アセット同梱 WAV IR (Hall, Jazz Club, Large Hall) を実行時リサンプル</li>
+<li><strong>安全クリッピング</strong>: Soft-knee (-0.92dBFS) で歪み防止</li>
+</ul>
+
+<h3 id="session-isolation">3. セッション分離・ギャップレス遷移 (SID ベース)</h3>
+
+<pre><code>// 毎再生ごとにユニークな Session ID を付与
+private static final AtomicInteger SESSION_SEQ = new AtomicInteger(0);
+public final int sid = SESSION_SEQ.incrementAndGet();</code></pre>
+
+<ul>
+<li><strong>Web 側で古い SID のイベントを破棄</strong> → 競合状態による「操作効かない」「前の曲の位置が残る」を根絶</li>
+<li><strong>トラック切替時</strong>: 旧スレッド即座停止 (<code>haltTrackImmediate()</code> → <code>release()</code>) → 新スレッド起動</li>
+<li><strong>AudioTrack 再生成</strong>: <code>release()</code> でブロック中 write を確実に解放、Huawei 等の HAL バグ回避</li>
+</ul>
+
+<h3 id="background-resilience">4. バックグラウンド/スリープ/Doze 完全耐性</h3>
+
+<table>
+<thead>
+<tr>
+<th>対策</th>
+<th>実装</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU スリープ防止</td>
+<td><code>PARTIAL_WAKE_LOCK</code> (1時間フェイルセーフ)</td>
+</tr>
+<tr>
+<td>Wi-Fi スリープ防止</td>
+<td><code>WIFI_MODE_FULL_HIGH_PERF</code> (Android 10+)</td>
+</tr>
+<tr>
+<td>プロセス優先度</td>
+<td><code>FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK</code></td>
+</tr>
+<tr>
+<td>自動起動</td>
+<td><code>play()</code> 時に <code>ContextCompat.startForegroundService()</code></td>
+</tr>
+<tr>
+<td>通知</td>
+<td>継続再生表示 (Ongoing, Silent, Low Priority)</td>
+</tr>
+</tbody>
+</table>
+
+<p><strong>結果</strong>: 画面オフ・ポケットイン・省電力モード・Doze モード下でも <strong>全フォーマット途切れなし</strong></p>
+
+<h3 id="dsf-native">5. DSF (DSD) ネイティブストリーミングデコード</h3>
+
+<ul>
+<li><strong>MediaCodec 不使用</strong>: DSD はコーデック非対応のため自前実装</li>
+<li><strong>ストリーミングパース</strong>: ヘッダ 92B 読み取り後、ブロック単位でデシメーション</li>
+<li><strong>リトライ機構</strong>: NAS (Soundgenic 等) のバースト後接続拒否に対応 (3回指数バックオフ)</li>
+<li><strong>ボックスカー デシメーション</strong>: R=32/64/128... で 88.2kHz 以上になる最大 2の冪乗を自動選択</li>
+<li><strong>同一パイプライン</strong>: デシメート後 96kHz へリサンプル → 共通 DSP → AudioTrack</li>
+</ul>
+
+<h3 id="saf-native">6. SAF (Storage Access Framework) ネイティブファイル再生</h3>
+
+<ul>
+<li>権限不要・システムピッカー経由でローカルフォルダ選択</li>
+<li>再帰スキャンで全楽曲取得 (DSF/DFF/FLAC/WAV/MP3/ALAC/APE/WV 等)</li>
+<li><code>contentfile</code> エンドポイントで <strong>Range Request / Partial Content 対応</strong> → シーク高速</li>
+<li>アルバムアート: ID3v2/FLAC Picture/MP4 covr/DSF 末尾/フォルダ画像 を多段フォールバック</li>
+</ul>
+
+<h2 id="specs">技術スペック</h2>
+
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>仕様</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>内部サンプルレート</td><td>96,000 Hz (固定)</td></tr>
+<tr><td>内部ビット深度</td><td>32-bit Float (IEEE 754)</td></tr>
+<tr><td>チャネル</td><td>ステレオ固定 (モノ入力は複製)</td></tr>
+<tr><td>リサンプラ</td><td>Catmull-Rom スプライン (4点補間、フラクショナル位相連続)</td></tr>
+<tr><td>DSP 精度</td><td>単精度浮動小数点 (SIMD 未使用、可搬性優先)</td></tr>
+<tr><td>AudioTrack モード</td><td><code>MODE_STREAM</code> / <code>WRITE_BLOCKING</code></td></tr>
+<tr><td>バッファサイズ</td><td><code>max(minBuf × 4, 256KB)</code></td></tr>
+<tr><td>デコードキュー</td><td><code>LinkedBlockingQueue<byte[]>(200)</code></td></tr>
+<tr><td>位置通知</td><td>Direct: 2Hz (実書き込みフレーム基準) / Proxy: 1Hz (PTS基準)</td></tr>
+<tr><td>シーク精度</td><td>サンプル精度 (MediaExtractor <code>SEEK_TO_PREVIOUS_SYNC</code>)</td></tr>
+</tbody>
+</table>
+
+<h2 id="phone-calibration">Phone Calibration &amp; Recalibration (AutoEQ ベースの音響補正)</h2>
+
+<blockquote>
+<strong>🎯 本アプリ最大の特徴</strong>: 所有ヘッドホンの周波数特性を自動解析し、AutoEQ / oratory1990 の 5000+ 件のデータベースから
+自身の機種と理想カーブへの差分を即座に生成。DSP パイプライン上でリアルタイム適用。
+</blockquote>
+
+<h3 id="hpcal-architecture">アーキテクチャ</h3>
+
+<div class="arch-diagram">┌────────────────────────────────────────────────────────────────────────┐
+│  HeadphoneCalibrationDrawer.tsx (Phase 2-⑥ / 2026-09-01 最新)            │
+│  ├─ 表示モード: showingTarget state (タップで所有 ⇄ ターゲット切替)  │
+│  ├─ 強度: calibrationIntensity (0.0..1.0, 10 ステップスライダー)     │
+│  ├─ A/B Direct トグル (DSP バイパス)                                  │
+│  └─ ターゲット選択: 🎯 ターゲットを選択 → CustomHeadphoneEditor        │
+│       └─ tab: 'target' (検索 + 44 件静的カタログ + WEB SEARCH)        │
+├────────────────────────────────────────────────────────────────────────┤
+│  App.tsx の DSP useEffect (依存: [selectedHeadphoneProfile,           │
+│                          targetCurveId])                                │
+│  └─ computeCorrectionBands(listening, target)                          │
+│       └─ 補正ゲイン = ターゲットゲイン - 所有ゲイン (5% トレランス)     │
+│            └─ audioEngine.setHeadphoneProfile(corrected) → Native DSP │
+├────────────────────────────────────────────────────────────────────────┤
+│  NativeDspChain.java: 10 バンド Parametric Biquad                      │
+│  └─ Biquad フィルタを 96kHz Float32 でリアルタイム適用                 │
+└────────────────────────────────────────────────────────────────────────┘</div>
+
+<h3 id="hpcal-pipeline">DSP 統合</h3>
+
+<p>Phone Calibration は <strong>96kHz 固定レート DSP パイプラインの "Headphone Calibration" ステージ</strong> に位置します:</p>
+
+<table>
+<thead>
+<tr>
+<th>段</th>
+<th>処理</th>
+<th>Phase</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>Preamp</td><td>-</td></tr>
+<tr><td>2</td><td>Source EQ (ジャンル別)</td><td>-</td></tr>
+<tr><td>3</td><td>Hum Filter (50/60Hz)</td><td>-</td></tr>
+<tr><td><strong>4</strong></td><td><strong>Headphone Calibration</strong></td><td><strong>Phase 2-⑥</strong></td></tr>
+<tr><td>5</td><td>Crossfeed (Meier 式)</td><td>-</td></tr>
+<tr><td>6</td><td>Output EQ (デバイス別)</td><td>-</td></tr>
+<tr><td>7</td><td>Tube Warmth (tanh 倍音)</td><td>-</td></tr>
+<tr><td>8</td><td>Ambience (IR リバーブ)</td><td>-</td></tr>
+<tr><td>9</td><td>Limiter (Brickwall)</td><td>-</td></tr>
+</tbody>
+</table>
+
+<h3 id="hpcal-targets">4 種類のターゲットカーブ</h3>
+
+<table>
+<thead>
+<tr>
+<th>id</th>
+<th>表示名</th>
+<th>動作</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>harman_reference</code></td>
+<td>Harman Reference (デフォルト)</td>
+<td>5 バンド近似: 105Hz / 1k / 3k +1dB / 5k +0.5dB / 10k -2dB</td>
+<td>リスニング疲労の少ない自然な音 (Harman 2019 Over-Ear Target)</td>
+</tr>
+<tr>
+<td><code>flat_bypass</code></td>
+<td>Bypass (No Calibration)</td>
+<td>補正なし (空 bands)</td>
+<td>素の音。A/B Direct と同じ</td>
+</tr>
+<tr>
+<td><code>flat_reference</code></td>
+<td>Flat Reference (打ち消し)</td>
+<td>1 バンド: 1kHz 0dB (所有の逆特性)</td>
+<td>所有ヘッドホンを完全フラット化</td>
+</tr>
+<tr>
+<td><code>&lt;preset_id&gt;</code></td>
+<td>プリセット機種名</td>
+<td>その機種のカーブを目標に</td>
+<td>リキャリブレーション (音色再現)</td>
+</tr>
+<tr>
+<td><code>&lt;custom_id&gt;</code></td>
+<td>ユーザー作成</td>
+<td>任意のカーブを目標に</td>
+<td>カスタム音色ターゲット</td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="hpcal-formula">補正カーブ計算式</h3>
+
+<pre><code>// 1. ターゲットと同じプロファイル → 補正なし
+if (listening.id === target.id) {
+  return { ...listening, bands: [] };
+}
+
+// 2. 各所有バンドについて:
+//    同じ周波数 (5% トレランス) のターゲットバンドのゲインを探索
+//    補正ゲイン = ターゲットゲイン - 所有ゲイン
+for (const lb of listening.bands) {
+  const tolerance = lb.freq * 0.05;
+  const exact = target.bands.find(tb => Math.abs(tb.freq - lb.freq) &lt;= tolerance);
+  const targetGain = exact ? exact.gain : 0;
+  correctedBands.push({ ...lb, gain: targetGain - lb.gain });
+}</code></pre>
+
+<h3 id="hpcal-catalog">AutoEQ データベース (44 件 内蔵)</h3>
+
+<p>主要ヘッドホンの AutoEQ 公開値を静的バンドリング (<code>src/dsp/headphoneCatalog.ts</code>):</p>
+
+<table>
+<thead>
+<tr><th>ブランド</th><th>代表モデル</th></tr>
+</thead>
+<tbody>
+<tr><td>AKG</td><td>K701, K712 Pro, K612 Pro, K371, K702</td></tr>
+<tr><td>Sennheiser</td><td>HD 800 S, HD 650, HD 600, HD 660 S2, IE 600, HD650</td></tr>
+<tr><td>Sony</td><td>WH-1000XM5, WH-1000XM4</td></tr>
+<tr><td>HIFIMAN</td><td>Deva Pro, Sundara, Ananda, Arya</td></tr>
+<tr><td>Audeze</td><td>LCD-XC, LCD-2 Classic</td></tr>
+<tr><td>Focal</td><td>Clear Mg</td></tr>
+<tr><td>Beyerdynamic</td><td>DT 990 Pro, DT 880 Pro, DT 770 Pro</td></tr>
+<tr><td>Audio-Technica</td><td>ATH-M50x, ATH-M50xBT</td></tr>
+<tr><td>Grado</td><td>SR80x</td></tr>
+<tr><td>Bose</td><td>QuietComfort 45, QuietComfort Ultra</td></tr>
+<tr><td>Moondrop</td><td>Kato, Variations, Chu, Aria</td></tr>
+<tr><td>Shure</td><td>SE215, SRH1440</td></tr>
+<tr><td>Etymotic</td><td>ER2XR, ER4SR</td></tr>
+<tr><td>他</td><td>Denon AH-D5200, Truthear HEXA, DUNU Vulkan, Campfire Andromeda, Final E5000, TIN HiFi P1, KZ ZSN Pro X</td></tr>
+</tbody>
+</table>
+
+<p>さらに <strong>WEB SEARCH ボタン</strong> で全 5000+ 件から検索可能 (v2 で <code>public/autoeq_catalog.json</code> を APK 同梱予定。バックグラウンド Python で取得中)。</p>
+
+<h3 id="hpcal-ui">UI 操作</h3>
+
+<ol>
+<li><strong>SET ボタン</strong>: ミキサーパネルの Phone Calibration カードの右側 [SET] をタップ → ドロワー開く</li>
+<li><strong>波形タップトグル</strong>: ドロワー上部のトーンカーブをタップ → 所有ヘッドホン ⇄ ターゲット の表示切替 (UI のみ、DSP は不変)</li>
+<li><strong>Calibration Strength</strong>: 10 ステップスライダーで 0-100% 設定 (CamillaDSP 哲学「介入最小化」)</li>
+<li><strong>A/B Direct</strong>: DSP バイパスのトグル。補正あり / なし を瞬時切替</li>
+<li><strong>🎯 ターゲットを選択</strong>: ターゲットカーブをカタログまたは手動入力で選択</li>
+<li><strong>プリセット保存</strong>: キャリブレーション設定を DSP プリセットとして保存可能</li>
+</ol>
+
+<h3 id="hpcal-persistence">永続化キー</h3>
+
+<table>
+<thead>
+<tr><th>キー</th><th>内容</th><th>デフォルト</th></tr>
+</thead>
+<tbody>
+<tr><td><code>biscene_target_curve_id</code></td><td>ターゲット id</td><td><code>harman_reference</code></td></tr>
+<tr><td><code>biscene_headphone_profile_v1</code></td><td>所有ヘッドホン id</td><td><code>sony_wh1000xm5</code></td></tr>
+<tr><td><code>biscene_hidden_presets</code></td><td>非表示プリセット id 配列</td><td><code>[]</code></td></tr>
+<tr><td><code>biscene_custom_headphone_profiles</code></td><td>カスタムプロファイル JSON 配列</td><td><code>[]</code></td></tr>
+</tbody>
+</table>
+
+<h3 id="hpcal-ui-dsp-separation">UI 表示と DSP 処理の完全分離 (重要)</h3>
+
+<p>Phase 2-⑥ で修正した React Hooks 順序問題を踏まえ、UI 状態と DSP 処理を <strong>完全に分離</strong>:</p>
+
+<table>
+<thead>
+<tr><th>項目</th><th>UI 表示</th><th>DSP 処理</th></tr>
+</thead>
+<tbody>
+<tr><td>依存 state</td><td>selectedHeadphoneProfile, targetCurveId, <strong>showingTarget</strong></td><td>selectedHeadphoneProfile, targetCurveId (<strong>showingTarget は含まない</strong>)</td></tr>
+<tr><td>更新タイミング</td><td>useState で即時</td><td>useEffect で自動</td></tr>
+<tr><td>影響</td><td>SVG 波形のみ</td><td>Native DSP (PCM 出力)</td></tr>
+<tr><td>タップで変化</td><td>する (波形切替)</td><td>しない (常に target - listening を Native DSP に送信)</td></tr>
+</tbody>
+</table>
+
+<p><code>App.tsx</code> には <code>showingTarget</code> への参照が一切ない (<code>grep -c showingTarget src/App.tsx</code> = 0)。</p>
+
+<h2 id="advantages">競合優位性 (他アプリとの差別化)</h2>
+
+<table>
+<thead>
+<tr>
+<th>特徴</th>
+<th>一般的アプリ</th>
+<th>Biscene DSPSystem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>24bit 実ビット深度維持</td>
+<td><span class="badge badge-ng">NG</span> (16bit にダウンコンバート or ノイズ)</td>
+<td><span class="badge badge-ok">OK</span> アライメント自動検出で完全維持</td>
+</tr>
+<tr>
+<td>96kHz 固定 DSP</td>
+<td><span class="badge badge-ng">NG</span> (入力レートのまま or 44.1/48kHz)</td>
+<td><span class="badge badge-ok">OK</span> 全エフェクト 96kHz 処理</td>
+</tr>
+<tr>
+<td>DSD ネイティブ再生</td>
+<td><span class="badge badge-ng">NG</span> (PCM 変換のみ/非対応)</td>
+<td><span class="badge badge-ok">OK</span> ストリーミング DSF 直接デコード</td>
+</tr>
+<tr>
+<td>バックグラウンド耐性</td>
+<td><span class="badge badge-warn">不完全</span> (WakeLock なし/不完全)</td>
+<td><span class="badge badge-ok">OK</span> Foreground Service + 双方ロック</td>
+</tr>
+<tr>
+<td>ギャップレス/切替無音</td>
+<td><span class="badge badge-ng">NG</span> (ノイズ/ギャップ発生)</td>
+<td><span class="badge badge-ok">OK</span> SID 分離 + AudioTrack 再生成</td>
+</tr>
+<tr>
+<td>リアルタイム DSP</td>
+<td><span class="badge badge-warn">不完全</span> (プリセットのみ/再起動要)</td>
+<td><span class="badge badge-ok">OK</span> パラメータライブ更新</td>
+</tr>
+<tr>
+<td>ローカル/NAS 統合</td>
+<td><span class="badge badge-ng">NG</span> (別アプリ/機能制限)</td>
+<td><span class="badge badge-ok">OK</span> SAF + DLNA/UPnP 統一 UI</td>
+</tr>
+<tr>
+<td>オープン/拡張性</td>
+<td><span class="badge badge-ng">NG</span> (クローズド)</td>
+<td><span class="badge badge-ok">OK</span> Capacitor Bridge で Web から全制御可能</td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="limitations">既知の制限・今後の拡張</h2>
+
+<table>
+<thead>
+<tr>
+<th>領域</th>
+<th>現状</th>
+<th>予定</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>マルチチャネル</td><td>ステレオ固定</td><td>5.1/7.1 対応 (AudioTrack <code>CHANNEL_OUT_5POINT1</code> 等)</td></tr>
+<tr><td>DSD256/512</td><td>DSD64/128 のみ</td><td>高次 DSD 対応 (デシメーション比拡張)</td></tr>
+<tr><td>MQA</td><td>非対応</td><td>MQA Core Decoder 統合検討</td></tr>
+<tr><td>イコライザプリセット</td><td>JSON 手動</td><td>プリセットライブラリ/インポートエクスポート</td></tr>
+<tr><td>測定補正</td><td>手動キャリブレーション</td><td>Room EQ Wizard 連携 / 自動測定</td></tr>
+<tr><td>ネットワークプロトコル</td><td>HTTP/HTTPS/DLNA</td><td>WebDAV, SMB, NFS, Roon RAAT</td></tr>
+</tbody>
+</table>
+
+<h2 id="requirements">ビルド・動作要件</h2>
+
+<table>
+<thead>
+<tr>
+<th>要件</th>
+<th>バージョン</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Android</td><td>API 24+ (Android 7.0), 推奨 API 29+ (Android 10)</td></tr>
+<tr><td>NDK</td><td>r25+ (NativeDspChain 未使用時は不要)</td></tr>
+<tr><td>Kotlin</td><td>1.9+</td></tr>
+<tr><td>Gradle</td><td>8.5+</td></tr>
+<tr><td>Capacitor</td><td>6.x</td></tr>
+<tr><td>権限</td><td><code>INTERNET</code>, <code>ACCESS_NETWORK_STATE</code>, <code>ACCESS_WIFI_STATE</code>, <code>WAKE_LOCK</code>, <code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_MEDIA_PLAYBACK</code>, <code>POST_NOTIFICATIONS</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="license">ライセンス・クレジット</h2>
+
+<ul>
+<li><strong>独自実装</strong>: DSP Chain, RateConverter, DSF Decoder, Session Management</li>
+<li><strong>参照/参考</strong>: CamillaDSP (アーキテクチャ), Freeverb (リバーブ), Android MediaCodec API ガイド</li>
+<li><strong>OSS 依存</strong>: なし (全ネイティブコードは自前、Java/Kotlin 標準 API のみ)</li>
+</ul>
+
+<div class="section-meta">
+<p><strong>仕様書バージョン:</strong> 1.0 (2026-08-28)<br>
+<strong>対応コミット:</strong> <code>152e4fc</code> (Foreground Service) + <code>15ba25e</code> (24bit Fix)</p>
+</div>
+
+<div class="footer-note no-print">
+<p>このドキュメントはブラウザで表示・印刷(PDF保存)可能です。<br>
+印刷時は「背景のグラフィック」を有効にしてください。</p>
+</div>
+
+<script>
+// Smooth scroll for TOC links
+document.querySelectorAll('.toc a').forEach(a => {
+    a.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector(a.getAttribute('href')).scrollIntoView({behavior: 'smooth'});
+    });
+});
+</script>
+</body>
+</html>

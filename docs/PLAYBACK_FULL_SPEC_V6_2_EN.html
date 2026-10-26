@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biscene DSPSystem V6.2 - Comprehensive Technical Specifications</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #222; max-width: 960px; margin: 0 auto; padding: 40px 20px; background: #f4f6f8; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: #111; font-size: 2.6em; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+        .version-badge { background: #00bcd4; color: white; padding: 6px 18px; border-radius: 50px; font-size: 0.38em; vertical-align: middle; position: relative; top: -12px; font-weight: 700; letter-spacing: 0.5px; }
+        .subtitle { color: #666; font-size: 1.1em; margin-top: 0; }
+        section { background: white; padding: 32px 35px; border-radius: 18px; box-shadow: 0 12px 35px rgba(0,0,0,0.04); margin-bottom: 28px; border: 1px solid #eef2f5; }
+        h2 { color: #00bcd4; border-left: 5px solid #00bcd4; padding-left: 15px; margin-top: 0; margin-bottom: 20px; font-size: 1.45em; text-transform: uppercase; letter-spacing: 0.8px; }
+        p { margin-bottom: 15px; color: #444; }
+        ul { padding-left: 22px; margin-bottom: 0; }
+        li { margin-bottom: 12px; color: #333; }
+        li:last-child { margin-bottom: 0; }
+        strong { color: #111; font-weight: 700; }
+        .feature-tag { display: inline-block; background: #e0f7fa; color: #00838f; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .v62-tag { display: inline-block; background: #1565c0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600; margin-right: 6px; }
+        .new-section { border-left: 5px solid #1565c0; }
+        .new-section h2 { color: #1565c0; border-left: none; padding-left: 0; }
+        footer { text-align: center; color: #888; font-size: 0.9em; margin-top: 50px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Biscene DSPSystem <span class="version-badge">V6.2 Production</span></h1>
+        <p class="subtitle">The next-generation professional native mastering engine, now with portable environment adaptation</p>
+    </header>
+
+    <section>
+        <h2>🚀 1. Core Native NDK & USB Bit-Perfect Direct Pipeline</h2>
+        <p>A 96kHz / 32-bit Float mastering foundation optimized with ARM NEON SIMD, and USB direct E2E bit-perfect output that completely bypasses AudioFlinger.</p>
+        <ul>
+            <li><strong>NEON SIMD 96kHz/32-bit Float Pipeline</strong>: The complete mastering DSP chain at 96,000Hz / 32-bit Floating Point, parallelized with ARM NEON instructions.</li>
+            <li><strong>Sample-Accurate Gapless Playback Pipeline</strong>:
+                <br>・<span class="feature-tag">`SinkCarrier` Handover Architecture</span> Retains the output sink (`AudioTrack` / USB Direct) across track boundaries without tearing it down; the successor track appends directly behind the previous track's buffered tail — gapless playback with no silent gaps or noise.
+                <br>・<span class="feature-tag">`LookaheadScheduler` Lookahead Prewarm</span> Probes the next track 5 seconds before track completion and pre-initializes the decoder (`PrewarmCache`) in the background.
+                <br>・<span class="feature-tag">Fade-Hold Tail Emission</span> A one-chunk hold-back guarantees the true final chunk is faded (up to 3ms / 288 frames, measured 1114-1115 frames) and emitted through the full DSP/sink path — every track ends at exact zero amplitude.
+                <br>・<span class="feature-tag">Pause→Flush→Play Handover Re-arm</span> The adopted sink is re-armed via `pause()→flush()→play()`, deterministically clearing residual audio of the previous track.
+                <br>・<span class="feature-tag">2-Second Buffer Floor</span> `Math.max(min*4, 1572864)` bytes (196,608 frames ≈ 2.0s) protects the measured worst-case 1.3s park period, eliminating underrun glitches.</li>
+            <li><strong>Dual-Path Absolute Phase Control (0° Normal / 180° Phase Reverse)</strong>:
+                <br>・<span class="feature-tag">DSP ON Mode</span> At the C++/NDK level (`NativeDspChain` - `nativeSetPhaseInverted`), a 1ms cross-fade provides noise-free 180° absolute phase inversion.
+                <br>・<span class="feature-tag">DSP OFF (Bit-Perfect) Mode</span> `JavaPhaseInverter` applies 180° phase inversion non-destructively to the raw PCM data right before USB packing, preserving bit depth and sample rate integrity.</li>
+            <li><span class="v62-tag">V6.2</span><strong>Night Mode Dynamics Compressor (`DynamicsCompressor`)</strong>:
+                <br>・<span class="feature-tag">Gentle Feed-Forward RMS Compression</span> 2:1 ratio, −24dB threshold, 20ms attack / 300ms release, −9dB max attenuation floor — calm night listening without pumping artifacts.
+                <br>・<span class="feature-tag">~10ms Ramp-Safe Toggle</span> The compression mix ramps over ~10ms (PhaseInverter pattern); toggling can never pop by construction. When disabled, a pure passthrough at zero cost.
+                <br>・<span class="feature-tag">Lock-Free & Allocation-Free</span> `setEnabled()` is a relaxed atomic store (safe from any thread); `process()` runs on the audio thread only with no heap allocation.
+                <br>・<span class="feature-tag">Bit-Perfect Purity</span> `night: true` is sent only when the Output EQ dial is on NIGHT. The `bypass: true` (bit-perfect direct) path never reaches this branch, so purity is preserved by construction.</li>
+            <li><strong>4-Point Catmull-Rom Linear-Phase Resampler (`RateConverter`)</strong>:
+                <br>・<span class="feature-tag">Catmull-Rom Cubic Spline Interpolation</span> High-precision resampling of input sources (44.1k/48k/88.2k etc.) to 96kHz.
+                <br>・<span class="feature-tag">Linear Phase & Zero Pre-Ringing</span> The time-symmetric 4-point polynomial interpolation kernel achieves a fully linear phase response with zero group delay distortion, completely eliminating pre-ringing (pre-echo) artifacts and faithfully protecting attack transients.</li>
+            <li><strong>USB Direct Output Mode (AudioFlinger Bypass)</strong>:
+                <br>・<span class="feature-tag">DSP OFF (E2E Bit-Perfect Direct)</span> End-to-End bit-perfect direct transmission. The source's native sample rate and original bit depth (16-bit / 24-bit / 32-bit) are delivered to the external USB DAC with zero resampling, zero alteration.
+                <br>・<span class="feature-tag">DSP ON (96kHz / 32-bit Mastering & 24-bit Downgrade)</span> Processed through `NativeDspChain` at 96kHz / 32-bit Float precision. If the connected USB DAC does not support 32-bit, it auto-downgrades safely to 24-bit (`UsbPcmPacker`) to match the DAC's hardware limit.</li>
+            <li><strong>Direct NDK Isochronous USB Engine (`UsbDirectEngine`)</strong>:
+                <br>・Submits USB isochronous URBs (`USBDEVFS_URB_TYPE_ISO`) directly via Linux `ioctl` from the C++/NDK layer — never passing through Android `AudioTrack` or the OS resampler.
+                <br>・<span class="feature-tag">Dynamic Kernel Driver Claim & Re-binding</span> On DAC connection, the standard `snd-usb-audio` driver is atomically detached via `USBDEVFS_DISCONNECT_CLAIM`; on release, it re-binds via `USBDEVFS_CONNECT` for fully automated system audio recovery.
+                <br>・<span class="feature-tag">UAC1 / UAC2 Descriptor Parsing</span> Parses USB Audio Class 1/2 descriptor structures to auto-detect supported sample rates, channel counts, and bit depths.</li>
+            <li><strong>Triple Output Architecture</strong>:
+                <br>・<span class="feature-tag">USB Direct Mode</span> USB Isochronous direct output to external USB DACs (DSP off: E2E bit-perfect / DSP on: 96kHz/32bit with 24-bit downgrade).
+                <br>・<span class="feature-tag">System Direct Mode</span> Direct playback writing into Android `AudioTrack` (96kHz Float).
+                <br>・<span class="feature-tag">HTTP Proxy Mode</span> 32-bit Float PCM delivery via the embedded proxy (`http://127.0.0.1:9600/pcm`).</li>
+            <li><strong>Lock-Free Zero-Allocation Thread</strong>: Dynamic memory allocation and lock acquisition are completely eliminated from the audio playback thread, banishing dropouts.</li>
+            <li><strong>True Peak Safety Limiter</strong>: 4x oversampled FIR with 1.0ms lookahead physically protects against inter-sample peak (ISP) clipping at the DAC.</li>
+            <li><strong>Hi-Res & DSD/DSF Native Decoder</strong>:
+                <br>・DSD (`.dsf`, `.dff`) 1-bit bitstream decoding (`DsfDecoderV2`) plus FLAC, WAV, ALAC, AAC, MP3, M4A multi-format support.
+                <br>・<span class="feature-tag">176.4kHz Dynamic Decimation</span> All DSD rates (DSD64/128/256/512) decimate to 176,400Hz hi-res PCM (`decimR` = 16/32/64/128).
+                <br>・<span class="feature-tag">Clean Trailing Block Handling</span> Incomplete trailing blocks are safely discarded on `drain()` (verified 0 dirty frames); DSD64 decode measured at 7.81x realtime (t25).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📐 2. Spatial & Virtual Acoustic Matrix (5x5)</h2>
+        <p>Precise physical reproduction of soundstage angle and distance based on physical head-acoustics modeling.</p>
+        <ul>
+            <li><strong>Unity-Gain Crossfeed (Woodworth ITD, native `SpatialMatrix`)</strong>:
+                <br>・<span class="feature-tag">6-Position Angle Dial (OFF / 15° / 30° / 45° / 60° / 90°)</span> Azimuth selected via the mixer row `X-FEED ANGLE` dial. OFF is fully bit-transparent passthrough.
+                <br>・<span class="feature-tag">Sub-Sample Fractional ITD Delay Lines</span> Woodworth model delay (`getItdSamples(angle)`) with linear interpolation for fractional-sample accuracy; the crosstalk component is delayed and injected into the opposite channel at a fixed 0.26 unity-gain crossfeed factor (the direct path stays at 1.0 — no level loss vs bypass).
+                <br>・<span class="feature-tag">Head Shadowing on Crosstalk</span> Native IIR shelving filters (`shadowL`/`shadowR`) apply frequency-dependent ILD to the crossfed component only.</li>
+            <li><strong>Spherical Head Shadowing</strong> Frequency-dependent head diffraction (ILD) emulated with native IIR filters.</li>
+            <li><strong>Distance Control Intelligence (Mixer `DISTANCE` Dial: OFF / INTIMATE / NEAR / NORMAL / FAR / DEEP)</strong>:
+                <br>・<span class="feature-tag">Proximity Effect</span> Low-frequency spherical-wave boost for near-field listening.
+                <br>・<span class="feature-tag">Air Absorption</span> Real-time emulation of high-frequency air attenuation for far-field perception.
+                <br>・<span class="feature-tag">Environment Correction Filters (`envL`/`envR`)</span> Per-channel IIR correction applied in the same 5x5 matrix pass after crossfeed staging.</li>
+            <li><strong>Virtual Acoustic Boundary Absorption Profiles</strong>: Acoustic space presets for material absorption characteristics (Studio, Wood, Glass).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🏛️ 3. Ambience & Real FIR Convolution</h2>
+        <p>Real-time convolution acoustic spaces based on impulse responses (IR).</p>
+        <ul>
+            <li><strong>Hybrid FIR Convolution + Feedback Tail</strong>: 1024-tap NEON-optimized early-reflection FIR combined with 4-comb / 2-allpass feedback tail networks.</li>
+            <li><strong>Zero-Copy Fast Path (`irId`)</strong>: The stable identifier system retunes decay and intensity instantly without memory reallocation or lock contention.</li>
+            <li><strong>Measured IR Asset Catalog</strong>: High-quality acoustic spaces included as standard — Studio Hall, Jazz Club, Large Bottle Hall, St. Nicolaes Church.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 4. Physical Modeling, Hi-Fi Restoration & Parametric EQ</h2>
+        <p>Physical mathematical modeling of tube circuits, harmonic reconstruction for lossy sources, and advanced calibration.</p>
+        <ul>
+            <li><strong>Hi-Fi Restoration Engine</strong>:
+                <br>・<span class="feature-tag">Harmonic Extrapolation</span> Rebuilds high-frequency harmonics (24kHz–32kHz) lost to lossy compression via FFT analysis.
+                <br>・<span class="feature-tag">Transient Punch</span> Wavelet-based attack freshness restoration.
+                <br>・<span class="feature-tag">De-Pre-Echo</span> Dynamic suppression of digital pre-ringing.</li>
+            <li><strong>Vacuum Tube Physical Modeling (Tube Model)</strong>:
+                <br>・<span class="feature-tag">Triode (300B)</span> Asymmetric transfer function emphasizing 2nd-order harmonics.
+                <br>・<span class="feature-tag">Pentode (KT88)</span> Dynamic symmetrical saturation characteristics.
+                <br>・<span class="feature-tag">Power Supply Sag</span> Organic reproduction of the B+ voltage drop under high load.
+                <br>・<span class="v62-tag">V6.2</span> The TUBE position on the Output EQ dial was replaced by NIGHT. Tube physical modeling itself (`tube_v4` payload, `TubeModel`) remains fully available via the mixer's TUBE WARMTH toggle.</li>
+            <li><strong>Multi-Stage Parametric EQ & Calibration</strong>:
+                <br>・Three-stage parametric processing: Source EQ, Band EQ, Output EQ.
+                <br>・<span class="v62-tag">V6.2</span> <strong>Output EQ Dial: 7 Positions (OFF / STUDIO / JBL / PLANAR / LOUD / CRYSTAL / NIGHT)</strong>: NIGHT combines the static night EQ curve (60Hz +5.5 / 250Hz +1.5 / 2.5kHz +3.0 / 14kHz −6.0 dB) with the dynamic Night Mode compressor. LOUD retained as the loudness contour (the inverse purpose of NIGHT).
+                <br>・50Hz / 60Hz power-grid hum notch filter.
+                <br>・2.2MB Headphone AutoEQ database (Crinacle & Oratory1990) with real-time total-curve visualization.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>📖 5. Listening Wiki & Encyclopedic Data Hub</h2>
+        <p>Fully automated deep analysis of track background, production credits, and artist history.</p>
+        <ul>
+            <li><strong>Multi-Tiered Metadata Enrichment Pipeline</strong>:
+                <br>1. <span class="feature-tag">AcoustID</span> Automatic track identification via audio fingerprinting.
+                <br>2. <span class="feature-tag">MusicBrainz & Discogs</span> Automatic extraction of producer, recording engineer, studio, and label credits.
+                <br>3. <span class="feature-tag">Wikipedia</span> Artist biographies and disambiguation of same-named performers.</li>
+            <li><strong>Unified Album Art Extraction Pipeline</strong>: Fully automated search — embedded tags ➔ local folder art ➔ NAS UPnP metadata ➔ iTunes Search API sync/async fallback.</li>
+            <li><span class="v62-tag">V6.2</span><strong>NativeImage Deferred Loading</strong>: Lazy tokens (`LAZY_BUCKET_SIZE`) make lazy-flagged images actually defer, so the main album cover (`AlbumArtFrame`, eager) is never starved by background artwork loads.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🌐 6. OpenHome & UPnP/DLNA DMR Network Architecture</h2>
+        <p>Complete bidirectional integration with high-end network audio devices.</p>
+        <ul>
+            <li><strong>Full OpenHome Renderer Specification</strong>:
+                <br>・Full support for `oh_product`, `oh_playlist`, `oh_transport`, `oh_volume`, `oh_info`, `oh_time`.
+                <br>・Automatic queue continuation after natural track end via `advanceAfterNaturalEnd()`, with `Move`, `ReadList`, `Insert`, `DeleteId`, and base64 `IdArray` state sync.
+                <br>・Fully compatible with controllers such as Linn Kazoo, Linn App, BubbleUPnP, Twonky, and Soundgenic NAS.</li>
+            <li><strong>UPnP AV DMR (Digital Media Renderer)</strong>: Full support for `AVTransport` and `RenderingControl`.</li>
+            <li><strong>Dual SSDP Bridge</strong>: Simultaneously multicasts both UPnP DMR and OpenHome Renderer device descriptions on the local network.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🛡️ 7. Background Execution & Deterministic System Protection</h2>
+        <p>Ironclad protection of the playback process from Android power saving and task killers.</p>
+        <ul>
+            <li><strong>Background Playback & Activity Lifecycle Control</strong>:
+                <br>・<span class="feature-tag">killProcess Avoidance</span> If the Activity finishes while music is playing (`PlaybackService` active), `killProcess` is bypassed and background playback continues normally.</li>
+            <li><strong>USB Audio Hotplug & Manager (`UsbAudioDetector`)</strong>:
+                <br>・Monitors USB device attach/detach (`ACTION_USB_DEVICE_ATTACHED` / `DETACHED`) and automatically acquires the file descriptor (FD) of the connected USB DAC.</li>
+            <li><strong>Android Media3 `PlaybackService`</strong>: Lock-screen widget, quick-settings media controls, and Bluetooth headset remote (Play/Pause/Next/Prev/Seek) integration.</li>
+            <li><strong>Power Saver Protection Mechanisms</strong>:
+                <br>・<span class="feature-tag">PARTIAL_WAKE_LOCK</span> A dedicated CPU WakeLock (`DSP:PlayerV2ThreadLock`) for the `BiscenePlayerV2` decode thread physically prevents dropouts in screen-off and power-save states.
+                <br>・<span class="feature-tag">WifiLock & MulticastLock</span> High-performance Wi-Fi lock (`WIFI_MODE_FULL_HIGH_PERF`) and UPnP multicast retention.</li>
+            <li><strong>Storage Access Framework (SAF) & OOM Protection</strong>: Files over 5MB branch to direct Blob URL references (`URL.createObjectURL`), completely preventing OOM crashes from Base64 IPC transfer.</li>
+            <li><strong>Logarithmic VU Meters & Peak Accumulation Safety Guard</strong>: 100ms peak accumulation with finite-float guards (`Float.isFinite()`) preventing needle slam. On the bit-perfect path, the raw source peak IS the DAC level (flagged post-fader).</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>🎨 8. Retro Skeuomorphic Hardware Chassis UI & Tactile Haptics</h2>
+        <p>The texture and feel of vintage high-end audio equipment, reproduced digitally.</p>
+        <ul>
+            <li><strong>Tactile Mechanical Controls & Haptic Feedback</strong>: Machined aluminum volume dials and 3-position metal toggle switches with linked fine-grained haptic vibration feedback (`triggerHaptic` tick/click).</li>
+            <li><strong>Symmetrical 4-Button Mixer Row (`STAGE`, `PHASE`, `RESTORE`, `HUM`)</strong>: Perfectly symmetrical sizing and layout matching the player's front panel, with cyan indicators that light up only when active.</li>
+            <li><strong>Bit-Perfect OSD Indicator</strong>: Placed directly under the brand logo, the `BIT PERFECT` text lights up white only during USB output with DSP off.</li>
+            <li><strong>Real-Time Analog VU Meters</strong>: Dual analog needle meters faithfully reflecting post-fader signal dynamics.</li>
+            <li><strong>Wood-Frame Responsive Layout</strong>: A wood-grain premium chassis design adapting to mobile, tablet, and desktop screen sizes.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>⚡ 9. Performance & Resource Optimizations (V6 Architecture)</h2>
+        <p>Extreme mobile resource efficiency and established application robustness.</p>
+        <ul>
+            <li><strong>Consolidated Thread Pools</strong>: The excessive thread pools of `UpnpSsdpBridge`, `MetadataCoordinator`, etc. rationalized to ~30 total threads.</li>
+            <li><strong>Code Splitting</strong>: The 2.2MB headphone catalog split into a dedicated async chunk via Vite `manualChunks`, cutting the initial JS bundle by 83%. <span class="v62-tag">V6.2 re-verified</span> index 346.98 kB (gzip 102.90 kB), catalog async separation maintained.</li>
+            <li><strong>Zero-Allocation Audio Rendering</strong>: `ByteBuffer.wrap(chunk)` in the non-direct proxy mode eliminates per-block heap allocation (GC spikes).</li>
+            <li><strong>Metadata LRU Cache</strong>: A thread-safe `LruCache` (100 items) for the MusicBrainz / Wikipedia clients blocks duplicate HTTP requests.</li>
+            <li><strong>PrewarmCache Bounded LRU</strong>: A 32-entry process-wide prewarm cache (one-shot `take()` semantics). The kill switch (`setEnabled(false)`) reverts to the legacy retriever path without a rebuild.</li>
+        </ul>
+    </section>
+
+    <section class="new-section">
+        <h2>🌙 10. Portable Environment Adaptation (V6.2 — All Features Implemented)</h2>
+        <p>Five major features that automatically adapt to changing mobile environments (DAC connection, network state, thermals, power saving). The purity and robustness of the audio architecture are never compromised.</p>
+        <ul>
+            <li><span class="v62-tag">N1</span><strong>Night Mode (Output EQ Dial Integration)</strong>:
+                <br>・<span class="feature-tag">Output EQ Dial Integration</span> The NIGHT position (last, after CRYSTAL) combines the static night EQ curve with the dynamic `DynamicsCompressor` — dial to NIGHT for the complete night listening experience.
+                <br>・<span class="feature-tag">Gentle Dynamics</span> 2:1 / −24dB / 20ms-300ms / −9dB floor; ~10ms ramp-safe toggle; lock-free, allocation-free, pure passthrough when OFF.
+                <br>・<span class="feature-tag">Stale-State Prevention</span> Every DSP update explicitly applies `night` (false on non-NIGHT positions) — a stale ON state can never survive a dial move (same pattern as the tube reset).</li>
+            <li><span class="v62-tag">N2</span><strong>LUFS Loudness Normalization</strong>:
+                <br>・<span class="feature-tag">`LoudnessAnalyzer` (pure JVM)</span> Simplified K-weighting approximation (one-pole HPF ~40Hz rumble removal + one-pole high-shelf ~1.5kHz +4dB ear-sensitivity lift + mean-square); `gain = −18 (ReplayGain 2.0 reference) − measured level dB`, clamped ±12dB; silence → 0dB safe default.
+                <br>・<span class="feature-tag">End-to-End Trigger Wiring</span> The playback thread collects the first 5s of raw source PCM (copy-only into a preallocated buffer) → analysis runs on the IO pool (R4 respected) → `onLoudnessMeasured` fires exactly once (default method — signature-safe) → rides the existing `playbackTime` channel to the Web layer → `setTrackLoudnessDb()` re-sends the DSP payload, applying the measured gain to the CURRENT track immediately.
+                <br>・<span class="feature-tag">Zero New JNI</span> The gain is added to `preampDb` in `updateDspInternal()` — the existing update() path computes `preampLin = 10^(preampDb·cs/20)` at update time (the recomputeMakeup() convention: update-time computation, the audio thread only reads).
+                <br>・<span class="feature-tag">Coefficient Bug Fixed by Measurement</span> The initial inverted (decay) coefficient form collapsed the mean square (GainProbe: a 0.95 sine measured +91.7dB = inverted direction); the one-pole step form gives verified correct gains (0.95 → −12 clamped, 0.25 → −10.78, 0.03 → +7.63, 0.0005 → +12 clamped).
+                <br>・<span class="feature-tag">Bit-Perfect Purity</span> The bypass payload has `preampDb: 0` and never carries `loudnessDb`, so the USB bit-perfect path is untouched by construction.</li>
+            <li><span class="v62-tag">P1</span><strong>Auto-DAC Profile & Protect System</strong>:
+                <br>・<span class="feature-tag">`DacProfileStore` (SharedPreferences persistence)</span> VID:PID keying (ports/serials excluded — the same DAC model hits the cache on any port); `load()` returns null on disabled/missing/parse-failure (the caller runs the legacy probe = safe default); `save()` only after a SUCCESSFUL configure+start (a transient failure is never locked in, PrewarmCache semantics); kill switch reverts without a rebuild.
+                <br>・<span class="feature-tag">Zero-Latency Re-apply</span> `initUsb()` re-applies the cached bitDepth BEFORE `configure()` (the rate is unchanged — it depends on the source/bypass state, not the DAC).
+                <br>・<span class="feature-tag">Soft-Start Anti-Pop Ramp</span> `writeUsbChunk()` ramps gain 0→1 over 8 chunks (~20–50ms), applied to the FLOAT samples BEFORE packing (multiplying packed bytes would corrupt them); armed at 1.0 so the steady state is a single integer compare and the hot path is untouched; the ramp re-arms on every USB (re)configuration — exactly the pop-prone driver (re)bind moment; the AudioTrack path is unaffected (the pop is specific to USB driver rebind). Lock-free: an `AtomicInteger` stepped per chunk on the playback thread only (R4 respected).</li>
+            <li><span class="v62-tag">P2</span><strong>Network-Resilient Variable Pre-roll</strong>:
+                <br>・<span class="feature-tag">`LookaheadScheduler.setWindowMs()`</span> `windowMs` is now volatile with a 3000–15000ms clamp; the DEFAULT 5000ms is unchanged (the existing tests' contract). A single volatile write — no lock, torn-read-safe, safe from any thread.
+                <br>・<span class="feature-tag">`NetworkStateMonitor`</span> `registerDefaultNetworkCallback` (the proven DualSsdpBridge pattern) maps link quality to the window — validated Wi-Fi → 5000ms (legacy default), validated cellular → 8000ms (handover + higher RTT), degraded/unvalidated/lost → 12000ms (a slow open still lands inside the window).
+                <br>・<span class="feature-tag">WindowConsumer Pattern</span> The per-listener scheduler is structurally per-track, so the monitor updates a plugin-level volatile field and each new track's scheduler adopts the current window at creation (instance initializer).
+                <br>・<span class="feature-tag">Safety</span> Every failure keeps the current window; the kill switch unregisters and restores the default; cold start applies the state immediately; never touches audio paths.</li>
+            <li><span class="v62-tag">P3</span><strong>Thermal & Battery Smart DSP Scaler</strong>:
+                <br>・<span class="feature-tag">`PowerStateMonitor`</span> `OnThermalStatusChangedListener` (API 29+, guarded) + `ACTION_POWER_SAVE_MODE_CHANGED` receiver; POLICY ONLY — computes a Policy enum and hands it to the consumer; never touches the audio thread, the native engine, or any lock.
+                <br>・<span class="feature-tag">Policy Mapping (pure, JVM-testable)</span> Power save → MUTE_AMBIENCE (hard constraint, wins over thermal); thermal ≥ SEVERE → MUTE_AMBIENCE (hard, instant); thermal ≥ MODERATE → REDUCE_AMBIENCE (the gentlest first step: halve the wet level of the single most CPU-hungry stage — the 1024-tap FIR + feedback tail); LIGHT/nominal → NONE (full DSP, exactly the pre-P3 behavior).
+                <br>・<span class="feature-tag">Exact Restore on Cooldown</span> `lastUserAmbIntensity` remembers the user's own ambience intensity from each DSP payload, so a thermal reduction restores it exactly when the device cools down.
+                <br>・<span class="feature-tag">ZERO New Native Paths</span> The policy is applied through the existing `updateDsp` payload path with a churn guard (no re-send when the change < 0.5); tone shaping, the Night compressor and the limiter are untouched.
+                <br>・<span class="feature-tag">Kill Switch</span> (`setEnabled(false)`) unregisters both listeners and notifies NONE — a one-line rollback to pre-P3 without a rebuild (R5 compliant).</li>
+        </ul>
+    </section>
+
+    <footer>
+        <p>© 2026 Bisen Biscene Audio Engineering. Mastered for Excellence.</p>
+    </footer>
+</body>
+</html>

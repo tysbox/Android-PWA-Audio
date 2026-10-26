@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#0d0d0d"/>
+  <rect x="24" y="24" width="464" height="464" rx="72" fill="none" stroke="#262626" stroke-width="8"/>
+  <!-- Gold Inner Ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#d97706" stroke-width="6" opacity="0.8"/>
+  <circle cx="256" cy="256" r="140" fill="#171717" stroke="#404040" stroke-width="12"/>
+  <!-- Knurled Wheel Lines -->
+  <path d="M256 76 L256 116 M256 396 L256 436 M76 256 L116 256 M396 256 L436 256 M128 128 L156 156 M356 356 L384 384 M356 156 L384 128 M128 384 L156 356" stroke="#f59e0b" stroke-width="8" stroke-linecap="round"/>
+  <!-- Center Audio Wave / B -->
+  <text x="256" y="285" font-family="sans-serif" font-weight="900" font-size="160" fill="#10b981" text-anchor="middle">B</text>
+</svg>

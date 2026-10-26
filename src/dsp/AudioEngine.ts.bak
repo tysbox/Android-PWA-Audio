@@ -1,0 +1,1063 @@
+import { Capacitor } from '@capacitor/core';
+import {
+  OUTPUT_EQ_OPTIONS,
+  SOURCE_EQ_OPTIONS,
+  HUM_FILTER_OPTIONS,
+  AMBIENCE_OPTIONS,
+  CROSSFEED_OPTIONS,
+  OUTPUT_EQ_PRESETS,
+  SOURCE_EQ_PRESETS,
+  getCrossfeedConfig,
+  AMBIENCE_IR_FILES,
+} from './presets';
+import { HEADPHONE_PROFILES } from './headphoneProfiles';
+import { HeadphoneProfile } from '../types';
+
+import {
+  fetchAudioViaNative,
+} from '../utils/upnpClient';
+
+function dbToGain(db: number): number {
+  return Math.pow(10, db / 20);
+}
+
+export class DspAudioEngine {
+  private ctx: AudioContext | null = null;
+
+  // Sources
+  private audioElement: HTMLAudioElement | null = null;
+  private fallbackAudioElement: HTMLAudioElement | null = null;
+  private activeAudioElement: HTMLAudioElement | null = null;
+  private mediaElementSource: MediaElementAudioSourceNode | null = null;
+  private toneOscillator: OscillatorNode | null = null;
+  private toneGain: GainNode | null = null;
+  private micStream: MediaStream | null = null;
+  private micSource: MediaStreamAudioSourceNode | null = null;
+
+  // Master Source Selector
+  private sourceBus: GainNode | null = null;
+
+  // Bypass Matrix (Instant A/B hardware switch)
+  private isBypassed = false;
+  private dspInputGain: GainNode | null = null;
+  private bypassGain: GainNode | null = null;
+
+  // Hum Filter Stage
+  private humHighpass: BiquadFilterNode | null = null;
+  private humNotch: BiquadFilterNode | null = null;
+
+  // Source EQ Stage (3 parametric bands)
+  private sourceEqFilters: BiquadFilterNode[] = [];
+
+  // Output EQ Stage (up to 4 parametric bands)
+  private outputEqFilters: BiquadFilterNode[] = [];
+
+  // Headphone / Earphone Calibration Stage (up to 10 AutoEq bands)
+  private headphoneFilters: BiquadFilterNode[] = [];
+  private headphonePreamp: GainNode | null = null;
+  private activeHeadphoneProfile: HeadphoneProfile = HEADPHONE_PROFILES[0];
+
+  // Analog Tube Saturation Stage (Waveshaper)
+  private tubeWarmthActive = false;
+  private tubeWaveShaper: WaveShaperNode | null = null;
+
+  // Crossfeed Matrix
+  private cfSplitter: ChannelSplitterNode | null = null;
+  private cfDirectL: GainNode | null = null;
+  private cfDirectR: GainNode | null = null;
+  private cfCrossLtoR: GainNode | null = null;
+  private cfCrossRtoL: GainNode | null = null;
+  private cfFilterL: BiquadFilterNode | null = null;
+  private cfFilterR: BiquadFilterNode | null = null;
+  private cfMerger: ChannelMergerNode | null = null;
+
+  // Ambience / Convolver Reverb
+  private ambSplitter: GainNode | null = null;
+  private ambDryGain: GainNode | null = null;
+  private ambConvolver: ConvolverNode | null = null;
+  private ambWetGain: GainNode | null = null;
+  private ambSumGain: GainNode | null = null;
+
+  // Master Gain & Volume
+  private masterSafetyGain: GainNode | null = null;
+  private masterLimiter: DynamicsCompressorNode | null = null;
+  private masterVolumeGain: GainNode | null = null;
+
+  // VU Meter Analysers (Stereo)
+  private meterSplitter: ChannelSplitterNode | null = null;
+  private leftAnalyser: AnalyserNode | null = null;
+  private rightAnalyser: AnalyserNode | null = null;
+
+  // Cached IR buffers
+  private irBufferCache: Map<string, AudioBuffer> = new Map();
+
+  // State
+  private currentUrl = '';
+  private consecutiveErrorCount = 0;
+  private isSettingUpPlayback = false;
+  private isToneActive = false;
+  private isCaptureActive = false;
+  private currentSourceEqIdx = 1;
+  private currentOutputEqIdx = 1;
+  private currentHumFilterIdx = 0;
+  private currentAmbienceIdx = 0;
+  private currentAmbienceIntensity = 50;
+  private currentCrossfeedIdx = 0;
+  private currentCrossfeedIntensity = 50;
+  private volumeLevel = 12; // 0 to 15
+  private maxVolume = 15;
+
+  public queueNextTrack(_url: string): void {
+    // Reserved for gapless pre-fetching
+  }
+
+  public clearNextTrack(): void {
+    // Reserved for gapless pre-fetching
+  }
+
+  // Callbacks
+  public onTrackEnded?: () => void;
+  public onPlaybackStateChange?: (isPlaying: boolean, isPaused: boolean) => void;
+
+  constructor() {
+    // Audio context is lazily initialized on user interaction
+  }
+
+  public async initAudioContext(): Promise<AudioContext> {
+    if (!this.ctx) {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      try {
+        // High-Resolution 96kHz 32-bit Float Master Pipeline (LDAC 96kHz / Oboe Direct)
+        this.ctx = new AudioContextClass({ sampleRate: 96000 });
+      } catch {
+        // Graceful fallback to hardware default if 96kHz is not supported by current web audio host
+        this.ctx = new AudioContextClass();
+      }
+      this.setupAudioGraph();
+    }
+    if (this.ctx.state === 'suspended') {
+      await this.ctx.resume();
+    }
+    return this.ctx;
+  }
+
+  public getSampleRate(): number {
+    return this.ctx ? this.ctx.sampleRate : 96000;
+  }
+
+  private makeTubeCurve(samples = 1024): Float32Array {
+    const curve = new Float32Array(samples);
+    const drive = 0.5; // Increased from 0.35 to 0.5 for more audible DSP warmth
+    for (let i = 0; i < samples; ++i) {
+      const x = (i * 2) / samples - 1;
+      const sign = x >= 0 ? 1 : -1;
+      const absX = Math.abs(x);
+      const secondHarmonic = 0.15 * drive * (x * x) * sign;
+      const saturated = Math.tanh(absX * (1 + drive * 0.4)) * sign;
+      curve[i] = (1 - drive * 0.3) * x + (drive * 0.3) * saturated + secondHarmonic;
+    }
+    return curve;
+  }
+
+  private setupAudioGraph(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+
+    // 1. Source Bus
+    this.sourceBus = ctx.createGain();
+
+    // 2. A/B Switch: DSP vs Bypass routing
+    this.dspInputGain = ctx.createGain();
+    this.bypassGain = ctx.createGain();
+    this.bypassGain.gain.value = 0.0;
+
+    this.sourceBus.connect(this.dspInputGain);
+    this.sourceBus.connect(this.bypassGain);
+
+    // 3. AC Hum Filter (15Hz Highpass + Notch)
+    this.humHighpass = ctx.createBiquadFilter();
+    this.humHighpass.type = 'highpass';
+    this.humHighpass.frequency.value = 15;
+    this.humHighpass.Q.value = 0.707;
+
+    this.humNotch = ctx.createBiquadFilter();
+    this.humNotch.type = 'notch';
+    this.humNotch.frequency.value = 50;
+    this.humNotch.Q.value = 30;
+
+    this.dspInputGain.connect(this.humHighpass);
+    this.humHighpass.connect(this.humNotch);
+
+    // 4. Source EQ Filters (3 bands)
+    let lastNode: AudioNode = this.humNotch;
+    this.sourceEqFilters = [];
+    for (let i = 0; i < 3; i++) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'peaking';
+      filter.frequency.value = 1000;
+      filter.Q.value = 1.0;
+      filter.gain.value = 0.0;
+      lastNode.connect(filter);
+      lastNode = filter;
+      this.sourceEqFilters.push(filter);
+    }
+
+    // 5. Output EQ Filters (4 bands)
+    this.outputEqFilters = [];
+    for (let i = 0; i < 4; i++) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'peaking';
+      filter.frequency.value = 1000;
+      filter.Q.value = 1.0;
+      filter.gain.value = 0.0;
+      lastNode.connect(filter);
+      lastNode = filter;
+      this.outputEqFilters.push(filter);
+    }
+
+    // 6. Headphone / Earphone Calibration Filters (up to 10 AutoEq bands)
+    this.headphonePreamp = ctx.createGain();
+    lastNode.connect(this.headphonePreamp);
+    lastNode = this.headphonePreamp;
+
+    this.headphoneFilters = [];
+    for (let i = 0; i < 10; i++) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'peaking';
+      filter.frequency.value = 1000;
+      filter.Q.value = 1.0;
+      filter.gain.value = 0.0;
+      lastNode.connect(filter);
+      lastNode = filter;
+      this.headphoneFilters.push(filter);
+    }
+
+    // 7. Analog Tube Saturation (Waveshaper)
+    this.tubeWaveShaper = ctx.createWaveShaper();
+    this.tubeWaveShaper.curve = this.makeTubeCurve() as any;
+    this.tubeWaveShaper.oversample = '2x';
+    lastNode.connect(this.tubeWaveShaper);
+    lastNode = this.tubeWaveShaper;
+
+    // 8. Crossfeed Matrix
+    this.cfSplitter = ctx.createChannelSplitter(2);
+    this.cfDirectL = ctx.createGain();
+    this.cfDirectR = ctx.createGain();
+    this.cfCrossLtoR = ctx.createGain();
+    this.cfCrossRtoL = ctx.createGain();
+    this.cfFilterL = ctx.createBiquadFilter();
+    this.cfFilterL.type = 'lowpass';
+    this.cfFilterL.frequency.value = 900;
+    this.cfFilterR = ctx.createBiquadFilter();
+    this.cfFilterR.type = 'lowpass';
+    this.cfFilterR.frequency.value = 900;
+    this.cfMerger = ctx.createChannelMerger(2);
+
+    lastNode.connect(this.cfSplitter);
+
+    this.cfSplitter.connect(this.cfDirectL, 0);
+    this.cfDirectL.connect(this.cfMerger, 0, 0);
+
+    this.cfSplitter.connect(this.cfFilterL, 0);
+    this.cfFilterL.connect(this.cfCrossLtoR);
+    this.cfCrossLtoR.connect(this.cfMerger, 0, 1);
+
+    this.cfSplitter.connect(this.cfDirectR, 1);
+    this.cfDirectR.connect(this.cfMerger, 0, 1);
+
+    this.cfSplitter.connect(this.cfFilterR, 1);
+    this.cfFilterR.connect(this.cfCrossRtoL);
+    this.cfCrossRtoL.connect(this.cfMerger, 0, 0);
+
+    // 9. Ambience / Convolver Reverb Block
+    this.ambSplitter = ctx.createGain();
+    this.ambDryGain = ctx.createGain();
+    this.ambWetGain = ctx.createGain();
+    this.ambConvolver = ctx.createConvolver();
+    this.ambSumGain = ctx.createGain();
+
+    this.cfMerger.connect(this.ambSplitter);
+
+    this.ambSplitter.connect(this.ambDryGain);
+    this.ambDryGain.connect(this.ambSumGain);
+
+    this.ambSplitter.connect(this.ambConvolver);
+    this.ambConvolver.connect(this.ambWetGain);
+    this.ambWetGain.connect(this.ambSumGain);
+
+    // 10. Master Safety Gain
+    this.masterSafetyGain = ctx.createGain();
+    this.masterSafetyGain.gain.value = dbToGain(0);
+    this.ambSumGain.connect(this.masterSafetyGain);
+
+    this.bypassGain.connect(this.masterSafetyGain);
+
+    // 10.5 Brickwall Limiter (DynamicsCompressorNode)
+    this.masterLimiter = ctx.createDynamicsCompressor();
+    this.masterLimiter.threshold.value = -0.5; // Trigger just before clipping
+    this.masterLimiter.knee.value = 0.0;       // Hard knee
+    this.masterLimiter.ratio.value = 20.0;     // High ratio (limit)
+    this.masterLimiter.attack.value = 0.005;   // Fast attack
+    this.masterLimiter.release.value = 0.050;  // Fast release
+    this.masterSafetyGain.connect(this.masterLimiter);
+
+    // 11. Master Volume Gain
+    this.masterVolumeGain = ctx.createGain();
+    this.setVolume(this.volumeLevel);
+    this.masterLimiter.connect(this.masterVolumeGain);
+
+    // 12. Stereo Analysers for VU Meters & Spectrum
+    this.meterSplitter = ctx.createChannelSplitter(2);
+    this.leftAnalyser = ctx.createAnalyser();
+    this.leftAnalyser.fftSize = 256;
+    this.leftAnalyser.smoothingTimeConstant = 0.65;
+
+    this.rightAnalyser = ctx.createAnalyser();
+    this.rightAnalyser.fftSize = 256;
+    this.rightAnalyser.smoothingTimeConstant = 0.65;
+
+    this.masterVolumeGain.connect(this.meterSplitter);
+    this.meterSplitter.connect(this.leftAnalyser, 0);
+    this.meterSplitter.connect(this.rightAnalyser, 1);
+
+    this.masterVolumeGain.connect(ctx.destination);
+
+    // HTML Audio element (Primary Web Audio node)
+    this.audioElement = new Audio();
+    this.audioElement.crossOrigin = 'anonymous';
+    this.audioElement.addEventListener('ended', () => this.handleTrackEnded('primary'));
+    this.audioElement.addEventListener('error', (e) => this.handleTrackError(e, 'primary'));
+    this.mediaElementSource = ctx.createMediaElementSource(this.audioElement);
+    this.mediaElementSource.connect(this.sourceBus);
+
+    // Fallback Direct Audio element (NOT connected to createMediaElementSource, plays direct for non-CORS DLNA)
+    this.fallbackAudioElement = new Audio();
+    this.fallbackAudioElement.addEventListener('ended', () => this.handleTrackEnded('fallback'));
+    this.fallbackAudioElement.addEventListener('error', (e) => this.handleTrackError(e, 'fallback'));
+
+    this.applyAllDspSettings();
+  }
+
+  private handleTrackEnded(source: 'primary' | 'fallback'): void {
+    const active = this.activeAudioElement;
+    const isCurrent =
+      (source === 'primary' && active === this.audioElement) ||
+      (source === 'fallback' && active === this.fallbackAudioElement);
+
+    if (!isCurrent || this.isSettingUpPlayback) return;
+
+    this.consecutiveErrorCount = 0;
+    if (this.onTrackEnded) {
+      this.onTrackEnded();
+    }
+  }
+
+  private async handleTrackError(e: Event, source: 'primary' | 'fallback'): Promise<void> {
+    const active = this.activeAudioElement;
+    const isCurrent =
+      (source === 'primary' && active === this.audioElement) ||
+      (source === 'fallback' && active === this.fallbackAudioElement);
+
+    if (this.isSettingUpPlayback) return;
+
+    console.warn(`Audio element error (${source}):`, e);
+
+    // If primary failed during playback, try switching to direct fallback element
+    if (source === 'primary' && this.fallbackAudioElement && this.currentUrl) {
+      console.warn('Primary element error, switching to direct fallback audio element...');
+      const success = await this.playFallbackDirect(this.currentUrl);
+      if (success) return;
+    }
+
+    if (!isCurrent) return;
+
+    this.consecutiveErrorCount++;
+    if (this.consecutiveErrorCount > 3) {
+      console.error('Too many consecutive playback errors (>3). Halting auto-advance to prevent infinite loop.');
+      this.stopAllPlayback();
+      this.consecutiveErrorCount = 0;
+      return;
+    }
+
+    // Throttle track auto-advance by 800ms
+    setTimeout(() => {
+      if (this.onTrackEnded) {
+        this.onTrackEnded();
+      }
+    }, 800);
+  }
+
+  public toggleDspBypass(): boolean {
+    this.isBypassed = !this.isBypassed;
+    this.applyBypassState();
+    return this.isBypassed;
+  }
+
+  public setDspBypass(bypass: boolean): void {
+    this.isBypassed = bypass;
+    this.applyBypassState();
+  }
+
+  public getDspBypassed(): boolean {
+    return this.isBypassed;
+  }
+
+  private applyBypassState(): void {
+    if (!this.ctx || !this.dspInputGain || !this.bypassGain) return;
+    const now = this.ctx.currentTime;
+    if (this.isBypassed) {
+      this.dspInputGain.gain.setTargetAtTime(0.0, now, 0.02);
+      this.bypassGain.gain.setTargetAtTime(1.0, now, 0.02);
+    } else {
+      this.dspInputGain.gain.setTargetAtTime(1.0, now, 0.02);
+      this.bypassGain.gain.setTargetAtTime(0.0, now, 0.02);
+    }
+  }
+
+  public toggleTubeWarmth(): boolean {
+    this.tubeWarmthActive = !this.tubeWarmthActive;
+    this.applyTubeState();
+    return this.tubeWarmthActive;
+  }
+
+  public setTubeWarmth(enable: boolean): void {
+    this.tubeWarmthActive = enable;
+    this.applyTubeState();
+  }
+
+  public getTubeWarmth(): boolean {
+    return this.tubeWarmthActive;
+  }
+
+  private applyTubeState(): void {
+    if (!this.tubeWaveShaper) return;
+    if (this.tubeWarmthActive) {
+      this.tubeWaveShaper.curve = this.makeTubeCurve(1024) as any;
+    } else {
+      const linCurve = new Float32Array(2);
+      linCurve[0] = -1;
+      linCurve[1] = 1;
+      this.tubeWaveShaper.curve = linCurve as any;
+    }
+  }
+
+  public setHeadphoneProfile(profile: HeadphoneProfile): void {
+    this.activeHeadphoneProfile = profile;
+    this.applyHeadphoneCalibration();
+  }
+
+  public getActiveHeadphoneProfile(): HeadphoneProfile {
+    return this.activeHeadphoneProfile;
+  }
+
+  private applyHeadphoneCalibration(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const profile = this.activeHeadphoneProfile;
+
+    if (this.headphonePreamp) {
+      const preampGain = dbToGain(profile.preampGainDb || 0);
+      this.headphonePreamp.gain.setTargetAtTime(preampGain, now, 0.05);
+    }
+
+    this.headphoneFilters.forEach((filter, idx) => {
+      if (idx < profile.bands.length) {
+        const b = profile.bands[idx];
+        filter.type = (b.type as BiquadFilterType) || 'peaking';
+        filter.frequency.setTargetAtTime(b.freq, now, 0.05);
+        filter.Q.setTargetAtTime(b.q, now, 0.05);
+        filter.gain.setTargetAtTime(b.gain, now, 0.05);
+      } else {
+        filter.type = 'peaking';
+        filter.gain.setTargetAtTime(0, now, 0.05);
+      }
+    });
+  }
+
+  public updateDspParams(params: {
+    outputEqIdx?: number;
+    sourceEqIdx?: number;
+    humFilterIdx?: number;
+    ambienceIdx?: number;
+    ambienceIntensity?: number;
+    crossfeedIdx?: number;
+    crossfeedIntensity?: number;
+  }): void {
+    if (params.outputEqIdx !== undefined) this.currentOutputEqIdx = params.outputEqIdx;
+    if (params.sourceEqIdx !== undefined) this.currentSourceEqIdx = params.sourceEqIdx;
+    if (params.humFilterIdx !== undefined) this.currentHumFilterIdx = params.humFilterIdx;
+    if (params.ambienceIdx !== undefined) this.currentAmbienceIdx = params.ambienceIdx;
+    if (params.ambienceIntensity !== undefined) this.currentAmbienceIntensity = params.ambienceIntensity;
+    if (params.crossfeedIdx !== undefined) this.currentCrossfeedIdx = params.crossfeedIdx;
+    if (params.crossfeedIntensity !== undefined) this.currentCrossfeedIntensity = params.crossfeedIntensity;
+
+    this.applyAllDspSettings();
+  }
+
+  private applyAllDspSettings(): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    this.applyBypassState();
+    this.applyTubeState();
+    this.applyHeadphoneCalibration();
+
+    // 1. Hum Filter
+    const humId = HUM_FILTER_OPTIONS[this.currentHumFilterIdx] || 'NONE';
+    if (this.humHighpass && this.humNotch) {
+      if (humId === '50HZ') {
+        this.humHighpass.frequency.setTargetAtTime(15, now, 0.05);
+        this.humNotch.frequency.setTargetAtTime(50, now, 0.05);
+        this.humNotch.Q.setTargetAtTime(30, now, 0.05);
+      } else if (humId === '60HZ') {
+        this.humHighpass.frequency.setTargetAtTime(15, now, 0.05);
+        this.humNotch.frequency.setTargetAtTime(60, now, 0.05);
+        this.humNotch.Q.setTargetAtTime(30, now, 0.05);
+      } else {
+        this.humHighpass.frequency.setTargetAtTime(1, now, 0.05);
+        this.humNotch.frequency.setTargetAtTime(1, now, 0.05);
+        this.humNotch.Q.setTargetAtTime(0.001, now, 0.05);
+      }
+    }
+
+    // 2. Source EQ
+    const srcId = SOURCE_EQ_OPTIONS[this.currentSourceEqIdx] || 'NONE';
+    const srcConfigs = SOURCE_EQ_PRESETS[srcId] || [];
+    this.sourceEqFilters.forEach((filter, idx) => {
+      if (idx < srcConfigs.length) {
+        const conf = srcConfigs[idx];
+        filter.frequency.setTargetAtTime(conf.freq, now, 0.05);
+        filter.Q.setTargetAtTime(conf.q, now, 0.05);
+        filter.gain.setTargetAtTime(conf.gain, now, 0.05);
+      } else {
+        filter.gain.setTargetAtTime(0, now, 0.05);
+      }
+    });
+
+    // 3. Output EQ
+    const outId = OUTPUT_EQ_OPTIONS[this.currentOutputEqIdx] || 'NONE';
+    const outConfigs = OUTPUT_EQ_PRESETS[outId] || [];
+    this.outputEqFilters.forEach((filter, idx) => {
+      if (idx < outConfigs.length) {
+        const conf = outConfigs[idx];
+        filter.frequency.setTargetAtTime(conf.freq, now, 0.05);
+        filter.Q.setTargetAtTime(conf.q, now, 0.05);
+        filter.gain.setTargetAtTime(conf.gain, now, 0.05);
+      } else {
+        filter.gain.setTargetAtTime(0, now, 0.05);
+      }
+    });
+
+    // 4. Crossfeed
+    const cfId = CROSSFEED_OPTIONS[this.currentCrossfeedIdx] || 'NONE';
+    const cfConfig = getCrossfeedConfig(cfId, this.currentCrossfeedIntensity);
+    if (this.cfDirectL && this.cfDirectR && this.cfCrossLtoR && this.cfCrossRtoL) {
+      if (cfConfig) {
+        const directGain = dbToGain(cfConfig.directGainDb);
+        const crossGain = dbToGain(cfConfig.crossGainDb);
+        this.cfDirectL.gain.setTargetAtTime(directGain, now, 0.05);
+        this.cfDirectR.gain.setTargetAtTime(directGain, now, 0.05);
+        this.cfCrossLtoR.gain.setTargetAtTime(crossGain, now, 0.05);
+        this.cfCrossRtoL.gain.setTargetAtTime(crossGain, now, 0.05);
+      } else {
+        this.cfDirectL.gain.setTargetAtTime(1.0, now, 0.05);
+        this.cfDirectR.gain.setTargetAtTime(1.0, now, 0.05);
+        this.cfCrossLtoR.gain.setTargetAtTime(0.0, now, 0.05);
+        this.cfCrossRtoL.gain.setTargetAtTime(0.0, now, 0.05);
+      }
+    }
+
+    // 5. Ambience
+    const ambId = AMBIENCE_OPTIONS[this.currentAmbienceIdx] || 'NONE';
+    if (this.ambDryGain && this.ambWetGain && this.ambConvolver) {
+      if (ambId === 'NONE') {
+        this.ambDryGain.gain.setTargetAtTime(1.0, now, 0.05);
+        this.ambWetGain.gain.setTargetAtTime(0.0, now, 0.05);
+      } else {
+        const dryGainDb = -0.5; // Slight dip to preserve headroom
+        // Boosted wet gain: max 0dB at 100%, -12dB at 0%
+        const wetGainDb = -12.0 + (this.currentAmbienceIntensity / 100.0) * 12.0;
+        this.ambDryGain.gain.setTargetAtTime(dbToGain(dryGainDb), now, 0.05);
+        this.ambWetGain.gain.setTargetAtTime(dbToGain(wetGainDb), now, 0.05);
+        this.loadOrGenerateIr(ambId);
+      }
+    }
+
+    // 6. Master Safety Gain
+    if (this.masterSafetyGain) {
+      // With the brickwall limiter in place, we can keep the baseline gain at 0dB (unity)
+      // to preserve the original track volume, and only apply a tiny pad when Ambience is maxed.
+      const finalGainDb = ambId !== 'NONE'
+        ? 0.0 - (this.currentAmbienceIntensity / 100.0) * 1.5
+        : 0.0;
+      this.masterSafetyGain.gain.setTargetAtTime(dbToGain(finalGainDb), now, 0.05);
+    }
+  }
+
+  private async loadOrGenerateIr(ambienceId: string): Promise<void> {
+    if (!this.ctx || !this.ambConvolver) return;
+    const cacheKey = ambienceId.toUpperCase();
+
+    if (this.irBufferCache.has(cacheKey)) {
+      this.ambConvolver.buffer = this.irBufferCache.get(cacheKey)!;
+      return;
+    }
+
+    const filePath = AMBIENCE_IR_FILES[cacheKey];
+    if (filePath) {
+      try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const decoded = await this.ctx.decodeAudioData(arrayBuffer);
+          this.irBufferCache.set(cacheKey, decoded);
+          if (this.ambConvolver) this.ambConvolver.buffer = decoded;
+          return;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    const buffer = this.createSyntheticReverbBuffer(cacheKey);
+    this.irBufferCache.set(cacheKey, buffer);
+    if (this.ambConvolver) this.ambConvolver.buffer = buffer;
+  }
+
+  private createSyntheticReverbBuffer(type: string): AudioBuffer {
+    if (!this.ctx) throw new Error('AudioContext required');
+    const sampleRate = this.ctx.sampleRate;
+    let duration = 2.0;
+    let decay = 2.5;
+
+    switch (type) {
+      case 'JAZZ CLUB':
+        duration = 1.2;
+        decay = 3.5;
+        break;
+      case 'HALL':
+        duration = 2.4;
+        decay = 2.0;
+        break;
+      case 'LARGE HALL':
+        duration = 3.8;
+        decay = 1.5;
+        break;
+      case 'CHURCH':
+        duration = 5.0;
+        decay = 1.1;
+        break;
+      default:
+        duration = 1.5;
+        decay = 2.5;
+    }
+
+    const length = sampleRate * duration;
+    const impulse = this.ctx.createBuffer(2, length, sampleRate);
+    const left = impulse.getChannelData(0);
+    const right = impulse.getChannelData(1);
+
+    for (let i = 0; i < length; i++) {
+      const t = i / sampleRate;
+      const env = Math.exp(-decay * t);
+      left[i] = (Math.random() * 2 - 1) * env;
+      right[i] = (Math.random() * 2 - 1) * env;
+    }
+    return impulse;
+  }
+
+  public async playTrack(rawUrl: string): Promise<void> {
+    await this.initAudioContext();
+    this.stopTone();
+    this.stopCapture();
+
+    if (!rawUrl) return;
+
+    this.isSettingUpPlayback = true;
+
+    // Clean and sanitize URL
+    let url = rawUrl.trim();
+    if (!url.startsWith('blob:')) {
+      url = url.replace(/[^\x21-\x7E]/g, (char) => encodeURIComponent(char));
+    }
+    this.currentUrl = url;
+
+    // Pause both elements completely
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
+    }
+    if (this.fallbackAudioElement) {
+      this.fallbackAudioElement.pause();
+      this.fallbackAudioElement.currentTime = 0;
+    }
+
+    const isBlob = url.startsWith('blob:');
+    const isHttp = url.startsWith('http://') || url.startsWith('https://');
+
+    let playedOk = false;
+
+    if (isBlob) {
+      // Local file object URL
+      if (this.audioElement) {
+        try {
+          this.audioElement.removeAttribute('crossOrigin');
+          this.audioElement.src = url;
+          this.audioElement.load();
+          this.activeAudioElement = this.audioElement;
+          await this.audioElement.play();
+          playedOk = true;
+        } catch (e) {
+          console.warn('Primary element failed for blob, trying fallback:', e);
+        }
+      }
+      if (!playedOk && this.fallbackAudioElement) {
+        try {
+          this.fallbackAudioElement.removeAttribute('crossOrigin');
+          this.fallbackAudioElement.src = url;
+          this.fallbackAudioElement.load();
+          this.applyCurrentVolume();
+          this.activeAudioElement = this.fallbackAudioElement;
+          await this.fallbackAudioElement.play();
+          playedOk = true;
+        } catch (e2) {
+          console.error('Blob playback failed on both audio elements:', e2);
+        }
+      }
+    } else if (isHttp) {
+      // UPnP / DLNA HTTP or Stream URL
+      console.log('Attempting to play UPnP/HTTP track:', url);
+      finalUrl = url;
+
+      if (this.audioElement) {
+        try {
+          if (this.ctx && this.ctx.state === 'suspended') await this.ctx.resume();
+
+          this.audioElement.crossOrigin = 'anonymous';
+          this.audioElement.src = finalUrl;
+          this.audioElement.load();
+          this.activeAudioElement = this.audioElement;
+          await this.audioElement.play();
+          playedOk = true;
+        } catch (e) {
+          console.warn('Playback failed for HTTP stream:', e);
+        }
+      }
+
+      // If primary failed with CORS, try primary WITHOUT CORS (DSP will be bypassed by browser security)
+      if (!playedOk && this.audioElement && !isProxied) {
+        try {
+          this.audioElement.removeAttribute('crossOrigin');
+          this.audioElement.src = finalUrl;
+          this.audioElement.load();
+          this.activeAudioElement = this.audioElement;
+          await this.audioElement.play();
+          playedOk = true;
+          console.warn('Primary element started playback WITHOUT CORS (DSP may be ignored by browser)');
+        } catch (e) {
+          console.warn('Primary element failed without CORS, falling back to direct element:', e);
+        }
+      }
+
+      // Final fallback to direct element
+      if (!playedOk && this.fallbackAudioElement) {
+        playedOk = await this.playFallbackDirect(finalUrl);
+      }
+    } else {
+      // Custom scheme
+      if (this.audioElement) {
+        try {
+          this.audioElement.removeAttribute('crossOrigin');
+          this.audioElement.src = url;
+          this.audioElement.load();
+          this.activeAudioElement = this.audioElement;
+          await this.audioElement.play();
+          playedOk = true;
+        } catch (e) {
+          console.error('Playback failed for custom scheme:', e);
+        }
+      }
+    }
+
+    this.isSettingUpPlayback = false;
+
+    if (playedOk) {
+      this.consecutiveErrorCount = 0; // Reset error count on successful start
+    } else {
+      console.warn('Track failed to play on both audio elements:', url);
+      this.activeAudioElement = this.fallbackAudioElement; // Force active so error handler accepts it
+      this.handleTrackError(new Event('error'), 'fallback');
+    }
+  }
+
+  private async playFallbackDirect(url: string): Promise<boolean> {
+    if (!this.fallbackAudioElement) return false;
+    try {
+      if (this.audioElement) {
+        this.audioElement.pause();
+        this.audioElement.removeAttribute('src');
+      }
+      this.fallbackAudioElement.removeAttribute('crossOrigin');
+      this.fallbackAudioElement.src = url;
+      this.fallbackAudioElement.load();
+      this.applyCurrentVolume();
+      this.activeAudioElement = this.fallbackAudioElement;
+      await this.fallbackAudioElement.play();
+      return true;
+    } catch (err) {
+      console.error('Direct fallback audio element play failed:', err);
+      return false;
+    }
+  }
+
+  private applyCurrentVolume(): void {
+    const factor = this.volumeLevel / this.maxVolume;
+    if (this.fallbackAudioElement) {
+      this.fallbackAudioElement.volume = Math.max(0, Math.min(1, factor));
+    }
+    if (this.audioElement) {
+      this.audioElement.volume = Math.max(0, Math.min(1, factor));
+    }
+  }
+
+  public play(): void {
+    const elem = this.activeAudioElement || this.audioElement;
+    if (elem && elem.src) {
+      this.initAudioContext().then(() => {
+        elem.play().catch((e) => console.warn('Play error:', e));
+      });
+    }
+  }
+
+  public pause(): void {
+    if (this.activeAudioElement) {
+      this.activeAudioElement.pause();
+    } else {
+      this.audioElement?.pause();
+      this.fallbackAudioElement?.pause();
+    }
+  }
+
+  public isPlaying(): boolean {
+    const elem = this.activeAudioElement || this.audioElement;
+    return !!(
+      elem &&
+      !elem.paused &&
+      !elem.ended &&
+      elem.readyState >= 2
+    );
+  }
+
+  public isPaused(): boolean {
+    const elem = this.activeAudioElement || this.audioElement;
+    return !!(
+      elem &&
+      elem.paused &&
+      elem.src
+    );
+  }
+
+  public getCurrentTime(): number {
+    const elem = this.activeAudioElement || this.audioElement;
+    return elem ? elem.currentTime : 0;
+  }
+
+  public getDuration(): number {
+    const elem = this.activeAudioElement || this.audioElement;
+    return elem ? elem.duration || 0 : 0;
+  }
+
+  public seek(seconds: number): void {
+    const elem = this.activeAudioElement || this.audioElement;
+    if (elem) {
+      elem.currentTime = seconds;
+    }
+  }
+
+  public stopAllPlayback(): void {
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
+      this.audioElement.removeAttribute('src');
+    }
+    if (this.fallbackAudioElement) {
+      this.fallbackAudioElement.pause();
+      this.fallbackAudioElement.currentTime = 0;
+      this.fallbackAudioElement.removeAttribute('src');
+    }
+    this.activeAudioElement = null;
+    this.stopTone();
+    this.stopCapture();
+  }
+
+  public async toggleTone(): Promise<boolean> {
+    await this.initAudioContext();
+    if (this.isToneActive) {
+      this.stopTone();
+      return false;
+    } else {
+      this.stopAllPlayback();
+      this.startTone();
+      return true;
+    }
+  }
+
+  private startTone(): void {
+    if (!this.ctx || !this.sourceBus) return;
+    this.toneOscillator = this.ctx.createOscillator();
+    this.toneGain = this.ctx.createGain();
+
+    this.toneOscillator.type = 'sine';
+    this.toneOscillator.frequency.value = 440.0;
+
+    this.toneGain.gain.value = 0.2;
+
+    this.toneOscillator.connect(this.toneGain);
+    this.toneGain.connect(this.sourceBus);
+
+    this.toneOscillator.start();
+    this.isToneActive = true;
+  }
+
+  public stopTone(): void {
+    if (this.toneOscillator) {
+      try {
+        this.toneOscillator.stop();
+        this.toneOscillator.disconnect();
+      } catch {
+        // Ignored
+      }
+      this.toneOscillator = null;
+    }
+    if (this.toneGain) {
+      this.toneGain.disconnect();
+      this.toneGain = null;
+    }
+    this.isToneActive = false;
+  }
+
+  public async toggleCapture(): Promise<boolean> {
+    await this.initAudioContext();
+    if (this.isCaptureActive) {
+      this.stopCapture();
+      return false;
+    } else {
+      this.stopAllPlayback();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            autoGainControl: false,
+            noiseSuppression: false,
+          },
+        });
+        this.micStream = stream;
+        if (this.ctx && this.sourceBus) {
+          this.micSource = this.ctx.createMediaStreamSource(stream);
+          this.micSource.connect(this.sourceBus);
+        }
+        this.isCaptureActive = true;
+        return true;
+      } catch (e) {
+        console.error('Audio capture failed:', e);
+        return false;
+      }
+    }
+  }
+
+  public stopCapture(): void {
+    if (this.micStream) {
+      this.micStream.getTracks().forEach((t) => t.stop());
+      this.micStream = null;
+    }
+    if (this.micSource) {
+      try {
+        this.micSource.disconnect();
+      } catch {
+        // Ignored
+      }
+      this.micSource = null;
+    }
+    this.isCaptureActive = false;
+  }
+
+  public setVolume(level: number): void {
+    this.volumeLevel = Math.max(0, Math.min(this.maxVolume, level));
+    if (this.masterVolumeGain && this.ctx) {
+      const factor = this.volumeLevel / this.maxVolume;
+      const gain = Math.pow(factor, 2.0);
+      this.masterVolumeGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.03);
+    }
+    this.applyCurrentVolume();
+  }
+
+  public getVolume(): number {
+    return this.volumeLevel;
+  }
+
+  public getMaxVolume(): number {
+    return this.maxVolume;
+  }
+
+  public getPeakLevels(): { left: number; right: number } {
+    if (!this.leftAnalyser || !this.rightAnalyser) {
+      return { left: 0, right: 0 };
+    }
+
+    const lArr = new Float32Array(this.leftAnalyser.frequencyBinCount);
+    const rArr = new Float32Array(this.rightAnalyser.frequencyBinCount);
+
+    (this.leftAnalyser as any).getFloatTimeDomainData(lArr);
+    (this.rightAnalyser as any).getFloatTimeDomainData(rArr);
+
+    let leftSum = 0;
+    let leftPeak = 0;
+    for (let i = 0; i < lArr.length; i++) {
+      const v = Math.abs(lArr[i]);
+      if (v > leftPeak) leftPeak = v;
+      leftSum += v * v;
+    }
+    const leftRms = Math.sqrt(leftSum / lArr.length);
+
+    let rightSum = 0;
+    let rightPeak = 0;
+    for (let i = 0; i < rArr.length; i++) {
+      const v = Math.abs(rArr[i]);
+      if (v > rightPeak) rightPeak = v;
+      rightSum += v * v;
+    }
+    const rightRms = Math.sqrt(rightSum / rArr.length);
+
+    const normL = Math.min(1.0, (leftPeak * 0.7 + leftRms * 1.5) * (this.volumeLevel > 0 ? 1 : 0));
+    const normR = Math.min(1.0, (rightPeak * 0.7 + rightRms * 1.5) * (this.volumeLevel > 0 ? 1 : 0));
+
+    return { left: normL, right: normR };
+  }
+
+  public getFrequencyData(): { left: Uint8Array; right: Uint8Array } {
+    if (!this.leftAnalyser || !this.rightAnalyser) {
+      return { left: new Uint8Array(16), right: new Uint8Array(16) };
+    }
+    const lFreq = new Uint8Array(this.leftAnalyser.frequencyBinCount);
+    const rFreq = new Uint8Array(this.rightAnalyser.frequencyBinCount);
+
+    (this.leftAnalyser as any).getByteFrequencyData(lFreq);
+    (this.rightAnalyser as any).getByteFrequencyData(rFreq);
+    return { left: lFreq, right: rFreq };
+  }
+
+  public isDspRunning(): boolean {
+    return !!(this.ctx && this.ctx.state === 'running');
+  }
+
+  public getToneRunning(): boolean {
+    return this.isToneActive;
+  }
+
+  public getCaptureRunning(): boolean {
+    return this.isCaptureActive;
+  }
+}
+
+// Global Singleton instance for React components
+export const audioEngine = new DspAudioEngine();
