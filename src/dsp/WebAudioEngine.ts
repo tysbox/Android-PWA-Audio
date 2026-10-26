@@ -146,7 +146,7 @@ export class WebAudioEngine {
       this.audioContext = new AudioContextClass({ sampleRate: 48000 });
       console.log('[WebAudioEngine] AudioContext created, sampleRate:', this.audioContext.sampleRate, 'state:', this.audioContext.state);
 
-      // 2. Create HTML5 Audio element
+      // 2. Create HTML5 Audio element (but DON'T create MediaElementSource yet)
       this.audioElement = new Audio();
       this.audioElement.preload = 'metadata';
       this.audioElement.crossOrigin = 'anonymous';
@@ -192,7 +192,8 @@ export class WebAudioEngine {
     }
   }
 
-  /** Setup AudioWorklet with automatic fallback to direct playback on failure */
+  /** Setup AudioWorklet with automatic fallback to direct playback on failure.
+   *  MediaElementSource is created HERE (once) after we know which mode we're in. */
   private async setupWorkletWithFallback(): Promise<void> {
     if (!this.audioContext || !this.audioElement) return;
 
@@ -208,14 +209,14 @@ export class WebAudioEngine {
       });
       console.log('[WebAudioEngine] AudioWorkletNode created');
 
-      // Connect: audioElement -> mediaSourceNode -> workletNode -> destination
+      // NOW create MediaElementSource and connect (Worklet mode)
       this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement!);
       this.mediaSourceNode.connect(this.workletNode);
       this.workletNode.connect(this.audioContext.destination);
       console.log('[WebAudioEngine] Audio graph connected (Worklet mode)');
 
-      // Send initial params
-      this.sendParams();
+      // Send initial params after a brief delay to ensure worklet port is ready
+      setTimeout(() => this.sendParams(), 50);
 
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
@@ -224,15 +225,9 @@ export class WebAudioEngine {
       this.useFallback = true;
 
       // Fallback: direct audioElement -> destination (no DSP)
+      // Create MediaElementSource HERE (first and only time)
       if (this.audioContext && this.audioElement) {
         try {
-          // Disconnect any existing connections
-          if (this.mediaSourceNode) {
-            this.mediaSourceNode.disconnect();
-          }
-          if (this.workletNode) {
-            this.workletNode.disconnect();
-          }
           this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement);
           this.mediaSourceNode.connect(this.audioContext.destination);
           console.log('[WebAudioEngine] Fallback audio graph connected (Direct mode)');
@@ -337,6 +332,7 @@ export class WebAudioEngine {
 
     const payload = this.buildDspPayload();
     this.workletNode.port.postMessage({ type: 'params', payload });
+    console.log('[WebAudioEngine] Initial params sent to worklet');
   }
 
   // ============================================================================
