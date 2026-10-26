@@ -931,15 +931,21 @@ export const App: React.FC = () => {
           }
 
           const items: TrackItem[] = await Promise.all(
-            filesToUse.map(async (f, idx) => ({
-              id: `pwa-file-${Date.now()}-${idx}`,
-              title: f.name.replace(/\.[^/.]+$/, ''),
-              artist: 'ローカルファイル',
-              album: 'PWA ライブラリ',
-              url: URL.createObjectURL(f),
-              format: f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
-              isLocal: true,
-            }))
+            filesToUse.map(async (f, idx) => {
+              let artUrl: string | undefined;
+              try { artUrl = await extractEmbeddedArtUrl(f) || undefined; }
+              catch (e) { console.warn('[App] extractEmbeddedArtUrl error:', e); }
+              return {
+                id: `pwa-file-${Date.now()}-${idx}`,
+                title: f.name.replace(/\.[^/.]+$/, ''),
+                artist: 'ローカルファイル',
+                album: 'PWA ライブラリ',
+                url: URL.createObjectURL(f),
+                albumArtUrl: artUrl,
+                format: f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
+                isLocal: true,
+              };
+            })
           );
 
           if (items.length === 0) return;
