@@ -903,8 +903,11 @@ export const App: React.FC = () => {
       input.multiple = true;
       input.accept = 'audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg,.dsf,.dff,.opus';
       input.onchange = async (e: any) => {
+        console.log('[App] PWA file picker onchange fired');
         const selectedFiles: File[] = Array.from(e.target?.files || []);
+        console.log('[App] Selected files:', selectedFiles.map(f => ({ name: f.name, type: f.type, size: f.size })));
         const audioFiles = selectedFiles.filter(f => isAudioFile(f));
+        console.log('[App] Filtered audio files:', audioFiles.map(f => f.name));
         if (audioFiles.length === 0) {
           alert('選択されたファイルの中に再生可能な音声ファイルが見つかりませんでした。');
           return;
@@ -912,7 +915,7 @@ export const App: React.FC = () => {
         const items: TrackItem[] = await Promise.all(
           audioFiles.map(async (f, idx) => {
             const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
-            const artUrl = await extractEmbeddedArtUrl(f);
+            const artUrl = await extractEmbeddedArtUrl(f).catch(e => { console.warn('[App] extractEmbeddedArtUrl error:', e); return null; });
             return {
               id: `pwa-file-${Date.now()}-${idx}`,
               title: f.name.replace(/\.[^/.]+$/, ''),
@@ -925,6 +928,7 @@ export const App: React.FC = () => {
             };
           })
         );
+        console.log('[App] Created items:', items);
         setPlaylist(items);
         playlistRef.current = items;
         setCurrentIndex(0);
@@ -1020,10 +1024,11 @@ export const App: React.FC = () => {
 
     if (!Capacitor.isNativePlatform()) {
       const processWebFiles = async () => {
+        console.log('[App] PWA handleAddToQueue called');
         const tracks: TrackItem[] = await Promise.all(
           audioFiles.map(async (f, idx) => {
             const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
-            const artUrl = await extractEmbeddedArtUrl(f);
+            const artUrl = await extractEmbeddedArtUrl(f).catch(e => { console.warn('[App] extractEmbeddedArtUrl error:', e); return null; });
             return {
               id: `pwa-queue-${Date.now()}-${idx}`,
               title: f.name.replace(/\.[^/.]+$/, ''),
@@ -1036,6 +1041,7 @@ export const App: React.FC = () => {
             };
           })
         );
+        console.log('[App] Adding tracks to queue:', tracks);
         setPlaylist((prev) => {
           const next = [...prev, ...tracks];
           playlistRef.current = next;
