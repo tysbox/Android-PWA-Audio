@@ -903,40 +903,83 @@ export const App: React.FC = () => {
       input.multiple = true;
       input.accept = 'audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg,.dsf,.dff,.opus';
       input.onchange = async (e: any) => {
-        console.log('[App] PWA file picker onchange fired');
-        const selectedFiles: File[] = Array.from(e.target?.files || []);
-        console.log('[App] Selected files:', selectedFiles.map(f => ({ name: f.name, type: f.type, size: f.size })));
-        const audioFiles = selectedFiles.filter(f => isAudioFile(f));
-        console.log('[App] Filtered audio files:', audioFiles.map(f => f.name));
-        if (audioFiles.length === 0) {
-          alert('選択されたファイルの中に再生可能な音声ファイルが見つかりませんでした。');
-          return;
-        }
-        const items: TrackItem[] = await Promise.all(
-          audioFiles.map(async (f, idx) => {
-            const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
-            const artUrl = await extractEmbeddedArtUrl(f).catch(e => { console.warn('[App] extractEmbeddedArtUrl error:', e); return null; });
-            return {
+        try {
+          const selectedFiles: File[] = Array.from(e.target?.files || []);
+          if (selectedFiles.length === 0) {
+            alert('ファイルが選択されませんでした。');
+            return;
+          }
+
+          // Show what was selected
+          const fileInfo = selectedFiles.map(f => `${f.name} (${f.type || 'no type'}, ${(f.size/1024).toFixed(1)}KB)`).join('\n');
+          console.log('[App] Selected files:', fileInfo);
+
+          const audioFiles = selectedFiles.filter(f => isAudioFile(f));
+          console.log('[App] Filtered audio files:', audioFiles.map(f => f.name));
+
+          if (audioFiles.length === 0) {
+            // Fallback: if files were selected but none passed filter, accept all
+            const extList = selectedFiles.map(f => f.name.split('.').pop()?.toUpperCase() || 'none').join(', ');
+            alert(`音声ファイルとして認識されませんでした。\n選択: ${fileInfo}\n拡張子: ${extList}\n\n拡張子に関わらず全てキューに追加します。`);
+
+            const fallbackItems: TrackItem[] = selectedFiles.map((f, idx) => ({
               id: `pwa-file-${Date.now()}-${idx}`,
               title: f.name.replace(/\.[^/.]+$/, ''),
               artist: 'ローカルファイル',
               album: 'PWA ライブラリ',
               url: URL.createObjectURL(f),
-              albumArtUrl: artUrl || undefined,
-              format: ext,
+              format: f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
               isLocal: true,
-            };
-          })
-        );
-        console.log('[App] Created items:', items);
-        setPlaylist(items);
-        playlistRef.current = items;
-        setCurrentIndex(0);
-        currentIndexRef.current = 0;
-        setRendererTrack(null);
-        setIsFileActive(true);
-        setIsPaused(false);
-        audioEngine.playTrack(items[0].url);
+            }));
+
+            setPlaylist(fallbackItems);
+            playlistRef.current = fallbackItems;
+            setCurrentIndex(0);
+            currentIndexRef.current = 0;
+            setRendererTrack(null);
+            setIsFileActive(true);
+            setIsPaused(false);
+            audioEngine.playTrack(fallbackItems[0].url);
+            return;
+          }
+
+          const items: TrackItem[] = await Promise.all(
+            audioFiles.map(async (f, idx) => {
+              const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
+              let artUrl: string | undefined;
+              try { artUrl = await extractEmbeddedArtUrl(f) || undefined; }
+              catch (e) { console.warn('[App] extractEmbeddedArtUrl error:', e); }
+              return {
+                id: `pwa-file-${Date.now()}-${idx}`,
+                title: f.name.replace(/\.[^/.]+$/, ''),
+                artist: 'ローカルファイル',
+                album: 'PWA ライブラリ',
+                url: URL.createObjectURL(f),
+                albumArtUrl: artUrl,
+                format: ext,
+                isLocal: true,
+              };
+            })
+          );
+
+          if (items.length === 0) {
+            alert('トラック作成に失敗しました（items.length === 0）。');
+            return;
+          }
+
+          console.log('[App] Created items:', items.map(i => i.title));
+          setPlaylist(items);
+          playlistRef.current = items;
+          setCurrentIndex(0);
+          currentIndexRef.current = 0;
+          setRendererTrack(null);
+          setIsFileActive(true);
+          setIsPaused(false);
+          audioEngine.playTrack(items[0].url);
+        } catch (err) {
+          console.error('[App] browseLocal error:', err);
+          alert(`ファイル処理エラー: ${err instanceof Error ? err.message : String(err)}`);
+        }
       };
       input.click();
       return;
@@ -1020,40 +1063,58 @@ export const App: React.FC = () => {
   const handleAddToQueue = (files: FileList) => {
     triggerHaptic('heavy');
     const audioFiles = Array.from(files).filter(isAudioFile);
-    if (audioFiles.length === 0) return;
+    const allFiles = Array.from(files);
+    if (audioFiles.length === 0 && allFiles.length > 0) {
+      // Fallback: accept all files if filter rejected everything
+      alert(`音声ファイルとして認識されませんでしたが、全てキューに追加します。\n${allFiles.map(f => f.name).join(', ')}`);
+    }
+    const filesToProcess = audioFiles.length > 0 ? audioFiles : allFiles;
+    if (filesToProcess.length === 0) return;
 
     if (!Capacitor.isNativePlatform()) {
       const processWebFiles = async () => {
-        console.log('[App] PWA handleAddToQueue called');
-        const tracks: TrackItem[] = await Promise.all(
-          audioFiles.map(async (f, idx) => {
-            const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
-            const artUrl = await extractEmbeddedArtUrl(f).catch(e => { console.warn('[App] extractEmbeddedArtUrl error:', e); return null; });
-            return {
-              id: `pwa-queue-${Date.now()}-${idx}`,
-              title: f.name.replace(/\.[^/.]+$/, ''),
-              artist: 'ローカルファイル',
-              album: 'PWA キュー',
-              url: URL.createObjectURL(f),
-              albumArtUrl: artUrl || undefined,
-              format: ext,
-              isLocal: true,
-            };
-          })
-        );
-        console.log('[App] Adding tracks to queue:', tracks);
-        setPlaylist((prev) => {
-          const next = [...prev, ...tracks];
-          playlistRef.current = next;
-          if (prev.length === 0) {
-            setCurrentIndex(0);
-            currentIndexRef.current = 0;
-            setIsFileActive(true);
-            setIsPaused(false);
-            audioEngine.playTrack(next[0].url);
+        try {
+          const tracks: TrackItem[] = await Promise.all(
+            filesToProcess.map(async (f, idx) => {
+              const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
+              let artUrl: string | undefined;
+              try { artUrl = await extractEmbeddedArtUrl(f) || undefined; }
+              catch (e) { console.warn('[App] extractEmbeddedArtUrl error:', e); }
+              return {
+                id: `pwa-queue-${Date.now()}-${idx}`,
+                title: f.name.replace(/\.[^/.]+$/, ''),
+                artist: 'ローカルファイル',
+                album: 'PWA キュー',
+                url: URL.createObjectURL(f),
+                albumArtUrl: artUrl,
+                format: ext,
+                isLocal: true,
+              };
+            })
+          );
+
+          if (tracks.length === 0) {
+            alert('トラック作成に失敗しました。');
+            return;
           }
-          return next;
-        });
+
+          console.log('[App] Adding tracks to queue:', tracks.map(t => t.title));
+          setPlaylist((prev) => {
+            const next = [...prev, ...tracks];
+            playlistRef.current = next;
+            if (prev.length === 0) {
+              setCurrentIndex(0);
+              currentIndexRef.current = 0;
+              setIsFileActive(true);
+              setIsPaused(false);
+              audioEngine.playTrack(next[0].url);
+            }
+            return next;
+          });
+        } catch (err) {
+          console.error('[App] handleAddToQueue error:', err);
+          alert(`キュー追加エラー: ${err instanceof Error ? err.message : String(err)}`);
+        }
       };
       processWebFiles();
       return;
