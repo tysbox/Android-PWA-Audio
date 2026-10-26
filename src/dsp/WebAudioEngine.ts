@@ -501,17 +501,25 @@ export class WebAudioEngine {
 
   /** PWA: Fetch MusicBrainz + Wikipedia metadata (artist bio, album notes, credits, tracklist) */
   async fetchWiki(artist: string, title: string, album?: string): Promise<any> {
-    if (!artist || !title) return null;
+    console.log('[WebAudioEngine] fetchWiki called:', { artist, title, album });
+    if (!artist || !title) {
+      console.log('[WebAudioEngine] fetchWiki: missing artist or title');
+      return null;
+    }
 
     try {
       // 1. Search MusicBrainz for recording
+      console.log('[WebAudioEngine] fetchWiki: searching MusicBrainz recording...');
       const recording = await this.searchMusicBrainzRecording(artist, title, album);
+      console.log('[WebAudioEngine] fetchWiki: recording result:', recording ? 'FOUND' : 'NOT FOUND');
       if (!recording) return null;
 
       const releaseId = recording.releases?.[0]?.id;
       const artistId = recording['artist-credit']?.[0]?.artist?.id;
+      console.log('[WebAudioEngine] fetchWiki: releaseId=', releaseId, 'artistId=', artistId);
 
       // 2. Fetch parallel data
+      console.log('[WebAudioEngine] fetchWiki: fetching parallel data...');
       const [
         releaseInfo,
         artistInfo,
@@ -523,6 +531,7 @@ export class WebAudioEngine {
         this.fetchWikipediaSummary(artist, album || '', title),
         releaseId ? this.fetchWikipediaTracklist(artist, album || '') : Promise.resolve(null)
       ]);
+      console.log('[WebAudioEngine] fetchWiki: parallel results:', { releaseInfo: !!releaseInfo, artistInfo: !!artistInfo, wikiSummary: !!wikiSummary, wikiTracklist: !!wikiTracklist });
 
       // 3. Build credits object matching native format
       const credits: any = {};
@@ -541,9 +550,10 @@ export class WebAudioEngine {
         }
       }
 
+      console.log('[WebAudioEngine] fetchWiki: final credits keys:', Object.keys(credits));
       return { credits };
     } catch (e) {
-      console.warn('[WebAudioEngine] fetchWiki failed:', e);
+      console.error('[WebAudioEngine] fetchWiki error:', e);
       return null;
     }
   }
@@ -553,11 +563,15 @@ export class WebAudioEngine {
     try {
       const query = `recording:"${title}" AND artist:"${artist}"${album ? ` AND release:"${album}"` : ''}`;
       const url = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=1`;
+      console.log('[WebAudioEngine] searchMusicBrainzRecording: URL=', url);
       const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0 (https://github.com/tysbox/Android-PWA-Audio)' } });
+      console.log('[WebAudioEngine] searchMusicBrainzRecording: resp.ok=', resp.ok, 'status=', resp.status);
       if (!resp.ok) return null;
       const data = await resp.json();
+      console.log('[WebAudioEngine] searchMusicBrainzRecording: recordings count=', data.recordings?.length || 0);
       return data.recordings?.[0] || null;
-    } catch {
+    } catch (e) {
+      console.error('[WebAudioEngine] searchMusicBrainzRecording error:', e);
       return null;
     }
   }
@@ -566,10 +580,13 @@ export class WebAudioEngine {
   private async fetchMusicBrainzRelease(releaseId: string): Promise<any> {
     try {
       const url = `https://musicbrainz.org/ws/2/release/${releaseId}?fmt=json&inc=annotations+relations+labels`;
+      console.log('[WebAudioEngine] fetchMusicBrainzRelease: URL=', url);
       const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0' } });
+      console.log('[WebAudioEngine] fetchMusicBrainzRelease: resp.ok=', resp.ok);
       if (!resp.ok) return null;
       return await resp.json();
-    } catch {
+    } catch (e) {
+      console.error('[WebAudioEngine] fetchMusicBrainzRelease error:', e);
       return null;
     }
   }
@@ -578,10 +595,13 @@ export class WebAudioEngine {
   private async fetchMusicBrainzArtist(artistId: string): Promise<any> {
     try {
       const url = `https://musicbrainz.org/ws/2/artist/${artistId}?fmt=json&inc=aliases+tags+ratings`;
+      console.log('[WebAudioEngine] fetchMusicBrainzArtist: URL=', url);
       const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0' } });
+      console.log('[WebAudioEngine] fetchMusicBrainzArtist: resp.ok=', resp.ok);
       if (!resp.ok) return null;
       return await resp.json();
-    } catch {
+    } catch (e) {
+      console.error('[WebAudioEngine] fetchMusicBrainzArtist error:', e);
       return null;
     }
   }
@@ -593,7 +613,9 @@ export class WebAudioEngine {
       // Try album page first
       if (album) {
         const albumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(album)}_(${encodeURIComponent(artist)})`;
+        console.log('[WebAudioEngine] fetchWikipediaSummary: album URL=', albumUrl);
         resp = await fetch(albumUrl);
+        console.log('[WebAudioEngine] fetchWikipediaSummary: album resp.ok=', resp.ok);
         if (resp.ok) {
           const data = await resp.json();
           if (data.extract) return data.extract;
@@ -601,13 +623,16 @@ export class WebAudioEngine {
       }
       // Fallback to artist page
       const artistUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist)}`;
+      console.log('[WebAudioEngine] fetchWikipediaSummary: artist URL=', artistUrl);
       resp = await fetch(artistUrl);
+      console.log('[WebAudioEngine] fetchWikipediaSummary: artist resp.ok=', resp?.ok);
       if (resp?.ok) {
         const data = await resp.json();
         return data.extract || null;
       }
       return null;
-    } catch {
+    } catch (e) {
+      console.error('[WebAudioEngine] fetchWikipediaSummary error:', e);
       return null;
     }
   }
