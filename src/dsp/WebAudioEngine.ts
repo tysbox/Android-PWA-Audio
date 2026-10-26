@@ -52,6 +52,8 @@ export class WebAudioEngine {
   private audioElement: HTMLAudioElement | null = null;
   private workletReady: Promise<void>;
   private resolveWorkletReady!: () => void;
+  private rejectWorkletReady!: (reason: Error) => void;
+  private initializationError: Error | null = null;
 
   // Playback state
   private isPlaying = false;
@@ -109,8 +111,9 @@ export class WebAudioEngine {
       preampGainDb: 0,
       bands: [],
     };
-    this.workletReady = new Promise((resolve) => {
+    this.workletReady = new Promise((resolve, reject) => {
       this.resolveWorkletReady = resolve;
+      this.rejectWorkletReady = reject;
     });
   }
 
@@ -125,24 +128,32 @@ export class WebAudioEngine {
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
+      if (this.initializationError) throw this.initializationError;
       return;
     }
 
     try {
+      console.log('[WebAudioEngine] Initializing AudioContext...');
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       this.audioContext = new AudioContextClass({ sampleRate: 48000 });
+      console.log('[WebAudioEngine] AudioContext created, sampleRate:', this.audioContext.sampleRate);
 
       // Load worklet module
+      console.log('[WebAudioEngine] Loading worklet module /dsp-processor.js...');
       await this.audioContext.audioWorklet.addModule('/dsp-processor.js');
+      console.log('[WebAudioEngine] Worklet module loaded');
+
       this.workletNode = new AudioWorkletNode(this.audioContext, 'dsp-processor', {
         numberOfInputs: 1,
         numberOfOutputs: 1,
         outputChannelCount: [2],
       });
+      console.log('[WebAudioEngine] WorkletNode created');
 
       // Create HTML5 Audio element for media playback
       this.audioElement = new Audio();
       this.audioElement.crossOrigin = 'anonymous';
+      this.audioElement.preload = 'metadata';
 
       this.audioElement.addEventListener('timeupdate', () => {
         if (this.audioElement) {
@@ -156,18 +167,36 @@ export class WebAudioEngine {
         this.onTrackEnded?.();
       });
 
+      this.audioElement.addEventListener('error', () => {
+        console.error('[WebAudioEngine] AudioElement error:', this.audioElement?.error);
+        this.isPlaying = false;
+      });
+
+      this.audioElement.addEventListener('waiting', () => {
+        console.log('[WebAudioEngine] AudioElement waiting for data...');
+      });
+
+      this.audioElement.addEventListener('canplay', () => {
+        console.log('[WebAudioEngine] AudioElement canplay');
+      });
+
       this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement);
       this.mediaSourceNode.connect(this.workletNode);
       this.workletNode.connect(this.audioContext.destination);
+      console.log('[WebAudioEngine] Audio graph connected: AudioElement -> MediaElementSource -> Worklet -> Destination');
 
       // Preload IR assets
       this.preloadIrs().catch((e) => console.warn('[WebAudioEngine] IR preload warning:', e));
 
       this.resolveWorkletReady();
       this.sendParams();
+      console.log('[WebAudioEngine] Initialization complete');
     } catch (e) {
-      console.error('[WebAudioEngine] Initialization error:', e);
-      this.resolveWorkletReady();
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.error('[WebAudioEngine] Initialization failed:', err);
+      this.initializationError = err;
+      this.rejectWorkletReady(err);
+      throw err;
     }
   }
 
@@ -271,10 +300,15 @@ export class WebAudioEngine {
   // ============================================================================
 
   async playTrack(url: string): Promise<void> {
+    console.log('[WebAudioEngine] playTrack:', url);
     await this.initialize();
-    if (!this.audioElement) return;
+    if (this.initializationError) throw this.initializationError;
+    if (!this.audioElement || !this.workletNode || !this.audioContext) {
+      throw new Error('[WebAudioEngine] Audio engine not initialized');
+    }
 
     try {
+      // Handle cross-origin for blob: URLs vs HTTP(S)
       if (url.startsWith('http:') || url.startsWith('https:')) {
         this.audioElement.crossOrigin = 'anonymous';
       } else {
@@ -285,12 +319,42 @@ export class WebAudioEngine {
       this.pcmPlayedSec = 0;
       this.pcmDuration = 0;
 
-      if (this.audioContext && this.audioContext.state === 'suspended') {
+      // Ensure AudioContext is running (user gesture should allow this)
+      if (this.audioContext.state === 'suspended') {
+        console.log('[WebAudioEngine] Resuming suspended AudioContext...');
         await this.audioContext.resume();
       }
 
+      // Wait for enough data to start playback
+      await new Promise<void>((resolve, reject) => {
+        if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+          resolve();
+          return;
+        }
+        const onCanPlay = () => {
+          this.audioElement!.removeEventListener('canplay', onCanPlay);
+          this.audioElement!.removeEventListener('error', onError);
+          resolve();
+        };
+        const onError = () => {
+          this.audioElement!.removeEventListener('canplay', onCanPlay);
+          this.audioElement!.removeEventListener('error', onError);
+          reject(new Error('AudioElement load error: ' + this.audioElement?.error?.message));
+        };
+        this.audioElement!.addEventListener('canplay', onCanPlay, { once: true });
+        this.audioElement!.addEventListener('error', onError, { once: true });
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          this.audioElement!.removeEventListener('canplay', onCanPlay);
+          this.audioElement!.removeEventListener('error', onError);
+          reject(new Error('AudioElement load timeout'));
+        }, 10000);
+      });
+
+      console.log('[WebAudioEngine] Starting playback...');
       await this.audioElement.play();
       this.isPlaying = true;
+      console.log('[WebAudioEngine] Playback started successfully');
 
       this.onMetadataUpdate?.({
         format: 'PWA Web Audio',
@@ -299,7 +363,10 @@ export class WebAudioEngine {
         duration: this.audioElement.duration || 0,
       });
     } catch (e) {
-      console.warn('[WebAudioEngine] Playback start blocked or failed:', e);
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.error('[WebAudioEngine] playTrack failed:', err);
+      this.isPlaying = false;
+      throw err;
     }
   }
 
@@ -320,7 +387,7 @@ export class WebAudioEngine {
       this.audioContext.resume();
     }
     if (this.audioElement) {
-      this.audioElement.play().catch(() => {});
+      this.audioElement.play().catch((e) => console.warn('[WebAudioEngine] play() failed:', e));
       this.isPlaying = true;
     }
     this.workletNode?.port.postMessage({ type: 'resume' });
@@ -438,12 +505,13 @@ export class WebAudioEngine {
 
   setVolume(level: number): void {
     this.volumeLevel = Math.max(0, Math.min(this.maxVolume, level));
+    const volSq = Math.pow(this.volumeLevel / this.maxVolume, 2);
     if (this.audioElement) {
-      this.audioElement.volume = Math.pow(this.volumeLevel / this.maxVolume, 2);
+      this.audioElement.volume = volSq;
     }
     this.workletNode?.port.postMessage({
       type: 'volume',
-      volume: Math.pow(this.volumeLevel / this.maxVolume, 2),
+      volume: volSq,
     });
     this.onVolumeUpdate?.(this.volumeLevel);
   }
