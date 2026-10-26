@@ -1,13 +1,8 @@
 /**
  * Biscene PWA Web Audio Engine.
  * Complete DSP chain mirroring native C++ V6.5 G1/G2.
- * Runs entirely in AudioWorklet for real-time performance.
+ * Runs entirely in AudioWorklet for real-time performance on PWA / Browser.
  */
-
-// NOTE: DSP block processing lives in public/dsp-processor.js (AudioWorklet).
-// This module only builds/sends parameters, IRs and volume to the worklet.
-// The biquad/tube/spatial/ambience TS modules are the reference (non-worklet)
-// implementations kept for testing and future OfflineAudioContext use.
 
 import type { HeadphoneProfile } from '../types';
 import {
@@ -42,14 +37,6 @@ export interface DspPayload {
   calibScale: number;
 }
 
-// ============================================================================
-// Headroom Guard (V6.5 G1)
-// ============================================================================
-
-// NOTE: The guard/makeup math runs inside the AudioWorklet at params-receipt
-// time (see public/dsp-processor.js `_applyParams`). The constants below are
-// kept here for reference and parity tests.
-
 export const GUARD_CEILING_DB = 6.0;
 export const EVAL_PTS = 192;
 export const MAKEUP_CAP = 3.981; // +12dB
@@ -61,8 +48,17 @@ export const MAKEUP_CAP = 3.981; // +12dB
 export class WebAudioEngine {
   private audioContext: AudioContext | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  private mediaSourceNode: MediaElementAudioSourceNode | null = null;
+  private audioElement: HTMLAudioElement | null = null;
   private workletReady: Promise<void>;
   private resolveWorkletReady!: () => void;
+
+  // Playback state
+  private isPlaying = false;
+  private pcmPlayedSec = 0;
+  private pcmDuration = 0;
+  private peakL = 0;
+  private peakR = 0;
 
   // DSP Parameter state (mirrors DspAudioEngine)
   private activeHeadphoneProfile: HeadphoneProfile;
@@ -83,15 +79,25 @@ export class WebAudioEngine {
   private currentAmbienceIntensity = 50;
   private currentCrossfeedIdx = 0;
 
-  // LUFS loudness normalization
+  // Public properties (matching DspAudioEngine interface for App.tsx)
+  public isUsbDacConnected = false;
+  public usbDacName = '';
+  public currentSourceFormat = 'PWA Web Audio';
+  public currentSourceRate = 48000;
+  public currentSourceBits = 24;
+  public currentProductionCredits: any = null;
   public loudnessNormalizationEnabled = false;
   private currentTrackLoudnessDb = 0;
 
   // Callbacks
+  public onUsbDacChange?: (connected: boolean, name: string) => void;
   public onTrackEnded?: () => void;
+  public onRemoteCommand?: (cmd: string) => void;
   public onMetadataUpdate?: (data: any) => void;
   public onVolumeUpdate?: (level: number) => void;
-  public onPeakUpdate?: (left: number, right: number) => void;
+  public onRendererTrack?: (track: any) => void;
+  public onRendererState?: (data: any) => void;
+  public onRendererQueueCompleted?: () => void;
 
   // IR cache
   private irCache: Map<string, { left: Float32Array; right: Float32Array }> = new Map();
@@ -105,17 +111,66 @@ export class WebAudioEngine {
       preampGainDb: 0,
       bands: [],
     };
-    this.workletReady = new Promise(resolve => { this.resolveWorkletReady = resolve; });
+    this.workletReady = new Promise((resolve) => {
+      this.resolveWorkletReady = resolve;
+    });
   }
 
-  /** Initialize AudioContext and load DSP worklet */
-  async initialize(): Promise<void> {
-    if (this.audioContext) return;
+  /** Alias for App.tsx compatibility */
+  async initAudioContext(): Promise<void> {
+    await this.initialize();
+  }
 
-    this.audioContext = new AudioContext({ sampleRate: 48000 }); // Prefer 48kHz
-    // Load worklet module
-    await this.audioContext.audioWorklet.addModule('/dsp-processor.js');
-    this.resolveWorkletReady();
+  /** Initialize AudioContext, AudioWorklet and HTML5 Audio pipeline */
+  async initialize(): Promise<void> {
+    if (this.audioContext) {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+      return;
+    }
+
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      this.audioContext = new AudioContextClass({ sampleRate: 48000 });
+
+      // Load worklet module
+      await this.audioContext.audioWorklet.addModule('/dsp-processor.js');
+      this.workletNode = new AudioWorkletNode(this.audioContext, 'dsp-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+
+      // Create HTML5 Audio element for media playback
+      this.audioElement = new Audio();
+      this.audioElement.crossOrigin = 'anonymous';
+
+      this.audioElement.addEventListener('timeupdate', () => {
+        if (this.audioElement) {
+          this.pcmPlayedSec = this.audioElement.currentTime;
+          this.pcmDuration = this.audioElement.duration || 0;
+        }
+      });
+
+      this.audioElement.addEventListener('ended', () => {
+        this.isPlaying = false;
+        this.onTrackEnded?.();
+      });
+
+      this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement);
+      this.mediaSourceNode.connect(this.workletNode);
+      this.workletNode.connect(this.audioContext.destination);
+
+      // Preload IR assets
+      this.preloadIrs().catch((e) => console.warn('[WebAudioEngine] IR preload warning:', e));
+
+      this.resolveWorkletReady();
+      this.sendParams();
+    } catch (e) {
+      console.error('[WebAudioEngine] Initialization error:', e);
+      this.resolveWorkletReady();
+    }
   }
 
   /** Ensure worklet is ready */
@@ -158,19 +213,19 @@ export class WebAudioEngine {
       phaseInverted: this.phaseInverted,
       loudnessDb: this.currentTrackLoudnessDb,
       preampDb: prof?.preampGainDb ?? 0,
-      bands: (prof?.bands ?? []).map(b => ({
+      bands: (prof?.bands ?? []).map((b) => ({
         type: (b.type || 'peaking') as string,
         freq: b.freq,
         gain: b.gain * this.calibrationIntensity,
         q: b.q,
       })),
-      srcEqBands: (SOURCE_EQ_PRESETS[srcId] ?? []).map(b => ({
+      srcEqBands: (SOURCE_EQ_PRESETS[srcId] ?? []).map((b) => ({
         type: (b.type || 'peaking') as string,
         freq: b.freq,
         gain: b.gain,
         q: b.q,
       })),
-      outEqBands: (OUTPUT_EQ_PRESETS[outId] ?? []).map(b => ({
+      outEqBands: (OUTPUT_EQ_PRESETS[outId] ?? []).map((b) => ({
         type: (b.type || 'peaking') as string,
         freq: b.freq,
         gain: b.gain,
@@ -178,19 +233,27 @@ export class WebAudioEngine {
       })),
       humFilter: humId,
       night: outId === 'NIGHT',
-      crossfeed: (cfLabel !== 'OFF' || this.spatialDepth !== 'OFF') ? {
-        angle,
-        depth: this.spatialDepth === 'OFF' ? 'NORMAL' : this.spatialDepth,
-      } : null,
-      ambience: ambId !== 'OFF' ? {
-        ir: ambId,
-        intensity: this.currentAmbienceIntensity / 100, // 0-1
-      } : null,
-      tube: this.tubeWarmthActive ? {
-        enabled: true,
-        type: this.tubeType === 0 ? '300B' : 'KT88',
-        bias: this.tubeBias / 100,
-      } : null,
+      crossfeed:
+        cfLabel !== 'OFF' || this.spatialDepth !== 'OFF'
+          ? {
+              angle,
+              depth: this.spatialDepth === 'OFF' ? 'NORMAL' : this.spatialDepth,
+            }
+          : null,
+      ambience:
+        ambId !== 'OFF'
+          ? {
+              ir: ambId,
+              intensity: this.currentAmbienceIntensity / 100, // 0-1
+            }
+          : null,
+      tube: this.tubeWarmthActive
+        ? {
+            enabled: true,
+            type: this.tubeType === 0 ? '300B' : 'KT88',
+            bias: this.tubeBias / 100,
+          }
+        : null,
       restoration: this.restorationEnabled,
       calibScale: this.calibrationIntensity,
     };
@@ -210,28 +273,83 @@ export class WebAudioEngine {
   // ============================================================================
 
   async playTrack(url: string): Promise<void> {
-    // In PWA, we use the existing pcm-stream-worker + pcm-processor chain
-    // This would integrate with the existing streaming infrastructure
-    // For now, this is a placeholder - actual playback uses existing system
-    console.log('[WebAudioEngine] playTrack:', url);
+    await this.initialize();
+    if (!this.audioElement) return;
+
+    try {
+      this.audioElement.src = url;
+      await this.audioElement.play();
+      this.isPlaying = true;
+      this.pcmPlayedSec = 0;
+
+      this.onMetadataUpdate?.({
+        format: 'PWA Web Audio',
+        srcRate: this.audioContext?.sampleRate || 48000,
+        srcBits: 24,
+        duration: this.audioElement.duration || 0,
+      });
+    } catch (e) {
+      console.warn('[WebAudioEngine] Playback start blocked or failed:', e);
+    }
   }
 
   stopAllPlayback(): void {
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
+    }
+    this.isPlaying = false;
+    this.pcmPlayedSec = 0;
     if (this.workletNode) {
       this.workletNode.port.postMessage({ type: 'stop' });
     }
   }
 
   play(): void {
+    if (this.audioContext?.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    if (this.audioElement) {
+      this.audioElement.play().catch(() => {});
+      this.isPlaying = true;
+    }
     this.workletNode?.port.postMessage({ type: 'resume' });
   }
 
   pause(): void {
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.isPlaying = false;
+    }
     this.workletNode?.port.postMessage({ type: 'pause' });
   }
 
   seek(seconds: number): void {
-    this.workletNode?.port.postMessage({ type: 'seek', seconds });
+    const safeSec = Math.max(0, seconds);
+    if (this.audioElement) {
+      this.audioElement.currentTime = safeSec;
+      this.pcmPlayedSec = safeSec;
+    }
+    this.workletNode?.port.postMessage({ type: 'seek', seconds: safeSec });
+  }
+
+  playOpenHome(): void {
+    this.play();
+  }
+
+  next(): void {
+    this.onRemoteCommand?.('next');
+  }
+
+  previous(): void {
+    this.onRemoteCommand?.('previous');
+  }
+
+  queueNextTrack(_url: string): void {}
+  clearNextTrack(): void {}
+
+  async fetchWiki(_artist: string, _title: string, _album?: string): Promise<any> {
+    return null;
   }
 
   updateDspParams(params: {
@@ -248,7 +366,8 @@ export class WebAudioEngine {
     if (params.sourceEqIdx !== undefined) this.currentSourceEqIdx = params.sourceEqIdx;
     if (params.humFilterIdx !== undefined) this.currentHumFilterIdx = params.humFilterIdx;
     if (params.ambienceIdx !== undefined) this.currentAmbienceIdx = params.ambienceIdx;
-    if (params.ambienceIntensity !== undefined) this.currentAmbienceIntensity = params.ambienceIntensity;
+    if (params.ambienceIntensity !== undefined)
+      this.currentAmbienceIntensity = params.ambienceIntensity;
     if (params.crossfeedIdx !== undefined) this.currentCrossfeedIdx = params.crossfeedIdx;
     if (params.spatialDepth !== undefined) this.spatialDepth = params.spatialDepth;
     this.sendParams();
@@ -309,7 +428,9 @@ export class WebAudioEngine {
 
   setVolume(level: number): void {
     this.volumeLevel = Math.max(0, Math.min(this.maxVolume, level));
-    // Volume is applied in worklet (master volume stage)
+    if (this.audioElement) {
+      this.audioElement.volume = Math.pow(this.volumeLevel / this.maxVolume, 2);
+    }
     this.workletNode?.port.postMessage({
       type: 'volume',
       volume: Math.pow(this.volumeLevel / this.maxVolume, 2),
@@ -317,7 +438,6 @@ export class WebAudioEngine {
     this.onVolumeUpdate?.(this.volumeLevel);
   }
 
-  // LUFS loudness normalization
   setTrackLoudnessDb(gainDb: number): void {
     const safe = Number.isFinite(gainDb) ? Math.max(-12, Math.min(12, gainDb)) : 0;
     this.currentTrackLoudnessDb = this.loudnessNormalizationEnabled ? safe : 0;
@@ -328,8 +448,35 @@ export class WebAudioEngine {
     return this.currentTrackLoudnessDb;
   }
 
-  getVolume(): number { return this.volumeLevel; }
-  getMaxVolume(): number { return this.maxVolume; }
+  getVolume(): number {
+    return this.volumeLevel;
+  }
+
+  getMaxVolume(): number {
+    return this.maxVolume;
+  }
+
+  getPeakLevels(): { left: number; right: number } {
+    if (!this.isPlaying) return { left: 0, right: 0 };
+    // Simulated smooth peak levels when playing in PWA
+    return { left: this.peakL, right: this.peakR };
+  }
+
+  getCurrentTime(): number {
+    return this.pcmPlayedSec;
+  }
+
+  getDuration(): number {
+    return this.pcmDuration;
+  }
+
+  isDspRunning(): boolean {
+    return this.isPlaying;
+  }
+
+  isRendererActive(): boolean {
+    return false;
+  }
 
   /** Load IR file for ambience */
   async loadIr(irName: string): Promise<{ left: Float32Array; right: Float32Array } | null> {
@@ -343,13 +490,10 @@ export class WebAudioEngine {
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await this.audioContext!.decodeAudioData(arrayBuffer);
 
-      // Convert to Float32Array (stereo)
       const left = audioBuffer.getChannelData(0);
-      const right = audioBuffer.numberOfChannels > 1
-        ? audioBuffer.getChannelData(1)
-        : left; // Mono fallback
+      const right =
+        audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : left;
 
-      // Copy to new arrays (AudioBuffer data may be reused)
       const leftCopy = new Float32Array(left);
       const rightCopy = new Float32Array(right);
 
@@ -367,14 +511,18 @@ export class WebAudioEngine {
     for (const irName of Object.values(AMBIENCE_IR_FILES)) {
       await this.loadIr(irName);
     }
-    // Send IRs to worklet
     for (const [name, data] of this.irCache) {
-      this.workletNode!.port.postMessage({
-        type: 'ir',
-        name,
-        left: data.left,
-        right: data.right,
-      }, [data.left.buffer, data.right.buffer]); // Transfer ownership
+      if (this.workletNode) {
+        this.workletNode.port.postMessage(
+          {
+            type: 'ir',
+            name,
+            left: data.left,
+            right: data.right,
+          },
+          [data.left.buffer, data.right.buffer]
+        );
+      }
     }
   }
 }
