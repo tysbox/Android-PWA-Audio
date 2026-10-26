@@ -212,8 +212,8 @@ async function fetchITunesArtwork(artist: string, album: string): Promise<string
   return null;
 }
 
-/** Extract artist/album from file using browser's MediaMetadata API (best effort) */
-async function getFileMetadata(file: File): Promise<{ artist: string; album: string }> {
+/** Extract artist/album/title from file using browser's MediaMetadata API (best effort) */
+async function getFileMetadata(file: File): Promise<FileMetadata> {
   // Try to read ID3 tags from the file head (quick scan)
   try {
     const head = await readSlice(file, 0, 786_432);
@@ -237,11 +237,25 @@ async function getFileMetadata(file: File): Promise<{ artist: string; album: str
     if (tpe1 >= 0) artist = readFrame(tpe1);
     if (!artist && tpe2 >= 0) artist = readFrame(tpe2);
     if (talb >= 0) album = readFrame(talb);
+    // Try to read title (TIT2)
+    const tit2 = asciiIndex(head, 'TIT2');
+    let title = '';
+    if (tit2 >= 0) title = readFrame(tit2);
 
-    return { artist, album };
+    return { artist, album, title };
   } catch {
-    return { artist: '', album: '' };
+    return { artist: '', album: '', title: '' };
   }
+}
+
+export interface FileMetadata {
+  artist: string;
+  album: string;
+  title: string;
+}
+
+export async function extractFileMetadata(file: File): Promise<FileMetadata> {
+  return getFileMetadata(file);
 }
 
 export async function extractEmbeddedArtUrl(file: File): Promise<string | null> {

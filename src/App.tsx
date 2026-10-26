@@ -8,7 +8,7 @@ import { QueDrawer } from './components/QueDrawer';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalBrowserModal } from './components/LocalBrowserModal';
 import { filesToTrackItems, isAudioFile } from './utils/localLibrary';
-import { extractEmbeddedArtUrl } from './utils/localArt';
+import { extractEmbeddedArtUrl, extractFileMetadata } from './utils/localArt';
 
 const DlnaPlayback = registerPlugin<{
   pickLocalFolder: () => Promise<{ folderName: string; files: { name: string; uri: string }[] }>;
@@ -933,17 +933,21 @@ export const App: React.FC = () => {
           const items: TrackItem[] = await Promise.all(
             filesToUse.map(async (f, idx) => {
               let artUrl: string | undefined;
+              let metadata = { artist: '', album: '', title: '' };
               try {
                 artUrl = await extractEmbeddedArtUrl(f) || undefined;
+                metadata = await extractFileMetadata(f);
                 console.log('[App] Album art extracted for', f.name, ':', artUrl ? 'SUCCESS' : 'NONE');
+                console.log('[App] Metadata extracted for', f.name, ':', metadata);
               } catch (e) {
                 console.warn('[App] extractEmbeddedArtUrl error for', f.name, ':', e);
               }
+              const fileTitle = metadata.title || f.name.replace(/\.[^/.]+$/, '');
               return {
                 id: `pwa-file-${Date.now()}-${idx}`,
-                title: f.name.replace(/\.[^/.]+$/, ''),
-                artist: 'ローカルファイル',
-                album: 'PWA ライブラリ',
+                title: fileTitle,
+                artist: metadata.artist || 'ローカルファイル',
+                album: metadata.album || 'PWA ライブラリ',
                 url: URL.createObjectURL(f),
                 albumArtUrl: artUrl,
                 format: f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
@@ -1073,17 +1077,21 @@ export const App: React.FC = () => {
             filesToProcess.map(async (f, idx) => {
               const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
               let artUrl: string | undefined;
+              let metadata = { artist: '', album: '', title: '' };
               try {
                 artUrl = await extractEmbeddedArtUrl(f) || undefined;
+                metadata = await extractFileMetadata(f);
                 console.log('[App] Album art extracted for', f.name, ':', artUrl ? 'SUCCESS' : 'NONE');
+                console.log('[App] Metadata extracted for', f.name, ':', metadata);
               } catch (e) {
                 console.warn('[App] extractEmbeddedArtUrl error for', f.name, ':', e);
               }
+              const fileTitle = metadata.title || f.name.replace(/\.[^/.]+$/, '');
               return {
                 id: `pwa-queue-${Date.now()}-${idx}`,
-                title: f.name.replace(/\.[^/.]+$/, ''),
-                artist: 'ローカルファイル',
-                album: 'PWA キュー',
+                title: fileTitle,
+                artist: metadata.artist || 'ローカルファイル',
+                album: metadata.album || 'PWA キュー',
                 url: URL.createObjectURL(f),
                 albumArtUrl: artUrl,
                 format: ext,
