@@ -897,41 +897,41 @@ export const App: React.FC = () => {
   const browseLocal = async () => {
     triggerHaptic('heavy');
     if (!Capacitor.isNativePlatform()) {
-      // PWA / Web Browser Local File Picker
       const input = document.createElement('input');
       input.type = 'file';
       input.multiple = true;
       input.accept = 'audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg,.dsf,.dff,.opus';
-      // Ensure input is in DOM for reliable onchange firing
-      input.style.display = 'none';
+      input.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;';
       document.body.appendChild(input);
-      input.onchange = async (e: any) => {
-        // === SYNC DEBUG: fires immediately when files selected ===
-        console.log('[App] browseLocal onchange FIRED');
-        alert('onchange fired! Selected ' + (e.target?.files?.length || 0) + ' files');
+
+      const cleanup = () => {
+        if (input.parentNode) document.body.removeChild(input);
+      };
+
+      const handleChange = async (e: Event) => {
+        const target = e.target as HTMLInputElement;
+        const files = target.files;
+        console.log('[App] onchange fired, files:', files?.length);
 
         try {
-          const selectedFiles: File[] = Array.from(e.target?.files || []);
-          console.log('[App] selectedFiles.length =', selectedFiles.length);
-          if (selectedFiles.length === 0) {
-            alert('ファイルが選択されませんでした（length=0）。');
-            document.body.removeChild(input);
+          if (!files || files.length === 0) {
+            console.warn('[App] No files selected');
             return;
           }
 
-          // Show what was selected
-          const fileInfo = selectedFiles.map(f => `${f.name} (${f.type || 'no type'}, ${(f.size/1024).toFixed(1)}KB)`).join('\n');
-          console.log('[App] Selected files:', fileInfo);
+          const selectedFiles = Array.from(files);
+          console.log('[App] Files selected:', selectedFiles.map(f => f.name));
 
-          const audioFiles = selectedFiles.filter(f => isAudioFile(f));
-          console.log('[App] Filtered audio files:', audioFiles.map(f => f.name));
+          const audioFiles = selectedFiles.filter(isAudioFile);
+          const filesToUse = audioFiles.length > 0 ? audioFiles : Array.from(files);
 
-          if (audioFiles.length === 0) {
-            // Fallback: if files were selected but none passed filter, accept all
-            const extList = selectedFiles.map(f => f.name.split('.').pop()?.toUpperCase() || 'none').join(', ');
-            alert(`音声ファイルとして認識されませんでした。\n選択: ${fileInfo}\n拡張子: ${extList}\n\n拡張子に関わらず全てキューに追加します。`);
+          if (audioFiles.length === 0 && selectedFiles.length > 0) {
+            const fileNames = selectedFiles.map(f => f.name).join(', ');
+            alert(`音声ファイルとして認識されませんでしたが、全てキューに追加します。\n${fileNames}`);
+          }
 
-            const fallbackItems: TrackItem[] = selectedFiles.map((f, idx) => ({
+          const items: TrackItem[] = await Promise.all(
+            filesToUse.map(async (f, idx) => ({
               id: `pwa-file-${Date.now()}-${idx}`,
               title: f.name.replace(/\.[^/.]+$/, ''),
               artist: 'ローカルファイル',
@@ -939,42 +939,10 @@ export const App: React.FC = () => {
               url: URL.createObjectURL(f),
               format: f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
               isLocal: true,
-            }));
-
-            setPlaylist(fallbackItems);
-            playlistRef.current = fallbackItems;
-            setCurrentIndex(0);
-            currentIndexRef.current = 0;
-            setRendererTrack(null);
-            setIsFileActive(true);
-            setIsPaused(false);
-            audioEngine.playTrack(fallbackItems[0].url);
-            return;
-          }
-
-          const items: TrackItem[] = await Promise.all(
-            audioFiles.map(async (f, idx) => {
-              const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
-              let artUrl: string | undefined;
-              try { artUrl = await extractEmbeddedArtUrl(f) || undefined; }
-              catch (e) { console.warn('[App] extractEmbeddedArtUrl error:', e); }
-              return {
-                id: `pwa-file-${Date.now()}-${idx}`,
-                title: f.name.replace(/\.[^/.]+$/, ''),
-                artist: 'ローカルファイル',
-                album: 'PWA ライブラリ',
-                url: URL.createObjectURL(f),
-                albumArtUrl: artUrl,
-                format: ext,
-                isLocal: true,
-              };
-            })
+            }))
           );
 
-          if (items.length === 0) {
-            alert('トラック作成に失敗しました（items.length === 0）。');
-            return;
-          }
+          if (items.length === 0) return;
 
           console.log('[App] Created items:', items.map(i => i.title));
           setPlaylist(items);
@@ -986,26 +954,33 @@ export const App: React.FC = () => {
           setIsPaused(false);
           audioEngine.playTrack(items[0].url);
         } catch (err) {
-          console.error('[App] browseLocal error:', err);
-          alert(`ファイル処理エラー: ${err instanceof Error ? err.message : String(err)}`);
+          console.error('[App] File processing error:', err);
+          alert(`Error: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
-          // Clean up input element
-          if (input.parentNode) document.body.removeChild(input);
+          cleanup();
         }
       };
-      input.click();
+
+      input.addEventListener('change', handleChange, { once: true });
+
+      try {
+        input.click();
+        console.log('[App] input.click() executed');
+      } catch (clickErr) {
+        console.error('[App] input.click() failed:', clickErr);
+        alert('ファイル選択ダイアログを開けませんでした: ' + clickErr);
+        cleanup();
+      }
       return;
     }
 
     try {
-      // ポップアップなしで直接フォルダ選択を起動
       const res = await DlnaPlayback.pickLocalFolder();
       const files = (res?.files as { name: string; uri: string }[] | undefined) ?? [];
       if (files.length === 0) {
         alert('フォルダ内に再生可能な楽曲が見つかりませんでした。');
         return;
       }
-      // IMMEDIATELY open modal with loading state (like DLNA)
       setSafAlbum({
         folderName: (res?.folderName as string) ?? 'Album',
         files,
@@ -1013,7 +988,6 @@ export const App: React.FC = () => {
         loading: true
       });
 
-      // Fetch metadata in background
       const metadataMap = new Map<string, { artist: string; title: string; album: string; duration: number }>();
       for (const f of files) {
         try {
@@ -1023,7 +997,6 @@ export const App: React.FC = () => {
           console.warn('getMediaMetadata failed for', f.uri, e);
         }
       }
-      // Update with metadata (modal stays open, loading disappears)
       setSafAlbum(prev => prev ? {
         ...prev,
         metadataMap,
