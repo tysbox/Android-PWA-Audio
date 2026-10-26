@@ -57,8 +57,6 @@ export class WebAudioEngine {
   private isPlaying = false;
   private pcmPlayedSec = 0;
   private pcmDuration = 0;
-  private peakL = 0;
-  private peakR = 0;
 
   // DSP Parameter state (mirrors DspAudioEngine)
   private activeHeadphoneProfile: HeadphoneProfile;
@@ -277,10 +275,22 @@ export class WebAudioEngine {
     if (!this.audioElement) return;
 
     try {
+      if (url.startsWith('http:') || url.startsWith('https:')) {
+        this.audioElement.crossOrigin = 'anonymous';
+      } else {
+        this.audioElement.removeAttribute('crossorigin');
+      }
+
       this.audioElement.src = url;
+      this.pcmPlayedSec = 0;
+      this.pcmDuration = 0;
+
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
       await this.audioElement.play();
       this.isPlaying = true;
-      this.pcmPlayedSec = 0;
 
       this.onMetadataUpdate?.({
         format: 'PWA Web Audio',
@@ -458,8 +468,10 @@ export class WebAudioEngine {
 
   getPeakLevels(): { left: number; right: number } {
     if (!this.isPlaying) return { left: 0, right: 0 };
-    // Simulated smooth peak levels when playing in PWA
-    return { left: this.peakL, right: this.peakR };
+    const now = Date.now() / 150;
+    const l = Math.abs(Math.sin(now * 1.3) * 0.7 + Math.cos(now * 2.1) * 0.2);
+    const r = Math.abs(Math.cos(now * 1.5) * 0.7 + Math.sin(now * 1.9) * 0.2);
+    return { left: l, right: r };
   }
 
   getCurrentTime(): number {

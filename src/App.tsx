@@ -893,31 +893,37 @@ export const App: React.FC = () => {
       input.type = 'file';
       input.multiple = true;
       input.accept = 'audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg,.dsf,.dff,.opus';
-      input.onchange = (e: any) => {
+      input.onchange = async (e: any) => {
         const selectedFiles: File[] = Array.from(e.target?.files || []);
         const audioFiles = selectedFiles.filter(f => isAudioFile(f));
         if (audioFiles.length === 0) {
           alert('選択されたファイルの中に再生可能な音声ファイルが見つかりませんでした。');
           return;
         }
-        const items: TrackItem[] = audioFiles.map((f, idx) => {
-          const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
-          return {
-            id: `pwa-file-${Date.now()}-${idx}`,
-            title: f.name.replace(/\.[^/.]+$/, ''),
-            artist: 'ローカルファイル',
-            album: 'PWA ライブラリ',
-            url: URL.createObjectURL(f),
-            format: ext,
-            isLocal: true,
-          };
-        });
+        const items: TrackItem[] = await Promise.all(
+          audioFiles.map(async (f, idx) => {
+            const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
+            const artUrl = await extractEmbeddedArtUrl(f);
+            return {
+              id: `pwa-file-${Date.now()}-${idx}`,
+              title: f.name.replace(/\.[^/.]+$/, ''),
+              artist: 'ローカルファイル',
+              album: 'PWA ライブラリ',
+              url: URL.createObjectURL(f),
+              albumArtUrl: artUrl || undefined,
+              format: ext,
+              isLocal: true,
+            };
+          })
+        );
         setPlaylist(items);
+        playlistRef.current = items;
         setCurrentIndex(0);
+        currentIndexRef.current = 0;
         setRendererTrack(null);
-        audioEngine.playTrack(items[0].url);
         setIsFileActive(true);
         setIsPaused(false);
+        audioEngine.playTrack(items[0].url);
       };
       input.click();
       return;
@@ -1002,6 +1008,41 @@ export const App: React.FC = () => {
     triggerHaptic('heavy');
     const audioFiles = Array.from(files).filter(isAudioFile);
     if (audioFiles.length === 0) return;
+
+    if (!Capacitor.isNativePlatform()) {
+      const processWebFiles = async () => {
+        const tracks: TrackItem[] = await Promise.all(
+          audioFiles.map(async (f, idx) => {
+            const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
+            const artUrl = await extractEmbeddedArtUrl(f);
+            return {
+              id: `pwa-queue-${Date.now()}-${idx}`,
+              title: f.name.replace(/\.[^/.]+$/, ''),
+              artist: 'ローカルファイル',
+              album: 'PWA キュー',
+              url: URL.createObjectURL(f),
+              albumArtUrl: artUrl || undefined,
+              format: ext,
+              isLocal: true,
+            };
+          })
+        );
+        setPlaylist((prev) => {
+          const next = [...prev, ...tracks];
+          playlistRef.current = next;
+          if (prev.length === 0) {
+            setCurrentIndex(0);
+            currentIndexRef.current = 0;
+            setIsFileActive(true);
+            setIsPaused(false);
+            audioEngine.playTrack(next[0].url);
+          }
+          return next;
+        });
+      };
+      processWebFiles();
+      return;
+    }
 
     const set = filesToTrackItems(audioFiles);
 
