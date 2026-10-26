@@ -370,6 +370,12 @@ export class WebAudioEngine {
       await new Promise<void>((resolve, reject) => {
         if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && isFinite(this.audioElement!.duration)) {
           console.log('[WebAudioEngine] Already have enough data and duration:', this.audioElement!.duration);
+          this.onMetadataUpdate?.({
+            format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
+            srcRate: this.audioContext?.sampleRate || 48000,
+            srcBits: 24,
+            duration: this.audioElement!.duration || 0,
+          });
           resolve();
           return;
         }
@@ -379,6 +385,12 @@ export class WebAudioEngine {
           if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
             resolved = true;
             console.log('[WebAudioEngine] Ready to play, duration:', this.audioElement!.duration);
+            this.onMetadataUpdate?.({
+              format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
+              srcRate: this.audioContext?.sampleRate || 48000,
+              srcBits: 24,
+              duration: this.audioElement!.duration || 0,
+            });
             resolve();
           }
         };
@@ -386,6 +398,13 @@ export class WebAudioEngine {
           console.log('[WebAudioEngine] loadedmetadata fired, duration:', this.audioElement!.duration);
           this.audioElement!.removeEventListener('loadedmetadata', onLoadedMetadata);
           this.audioElement!.removeEventListener('error', onError);
+          // Immediately notify App of duration so UI doesn't show LIVE
+          this.onMetadataUpdate?.({
+            format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
+            srcRate: this.audioContext?.sampleRate || 48000,
+            srcBits: 24,
+            duration: this.audioElement!.duration || 0,
+          });
           tryResolve();
         };
         const onCanPlay = () => {
@@ -416,13 +435,6 @@ export class WebAudioEngine {
       await this.audioElement!.play();
       this.isPlaying = true;
       console.log('[WebAudioEngine] Playback started successfully');
-
-      this.onMetadataUpdate?.({
-        format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
-        srcRate: this.audioContext?.sampleRate || 48000,
-        srcBits: 24,
-        duration: this.audioElement.duration || 0,
-      });
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       console.error('[WebAudioEngine] playTrack failed:', err);

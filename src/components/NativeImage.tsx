@@ -155,6 +155,9 @@ export const NativeImage: React.FC<NativeImageProps> = ({ src, fallback, lazy = 
 // that only gates `displaySrc`.
 const shouldRenderImg = Boolean(src) && !error && (!lazy || Boolean(displaySrc));
 
+  // Debug logging
+  console.log('[NativeImage] render:', { src, displaySrc, lazy, shouldRenderImg, error });
+
   // Sentinel for the visibility observer (see the lazy gate above). Out of
   // flow, 1x1, invisible: it gives IntersectionObserver a real box to measure
   // without altering the layout at all.
@@ -182,10 +185,14 @@ const shouldRenderImg = Boolean(src) && !error && (!lazy || Boolean(displaySrc))
         {...props}
         src={displaySrc || src}
         onError={(e) => {
+          console.error('[NativeImage] img onError:', e, 'src:', displaySrc || src);
           setError(true);
           props.onError?.(e);
         }}
-        onLoad={props.onLoad}
+        onLoad={(e) => {
+          console.log('[NativeImage] img onLoad:', 'src:', displaySrc || src);
+          props.onLoad?.(e);
+        }}
         alt={props.alt || "Artwork"}
         loading="eager"
       />
