@@ -94,6 +94,52 @@ export const VERIFIED_NETWORK_PRESETS = [
     genre: 'Live Jazz',
     quality: 'Direct AAC/MP3 Web Stream',
   },
+  // ===== Jazz & Classical additions (CORS-verified 2026-10) =====
+  {
+    title: 'Radio Paradise FLAC (Eclectic / Lossless)',
+    artist: 'Radio Paradise California',
+    album: 'FLAC 16/44.1 Lossless Stream',
+    url: 'https://stream.radioparadise.com/flac',
+    albumArtUrl: 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=500&auto=format&fit=crop&q=80',
+    genre: 'Eclectic / Jazz / Classical',
+    quality: 'FLAC Lossless · DSP Ready',
+  },
+  {
+    title: 'Radio Paradise Mellow FLAC (Lossless)',
+    artist: 'Radio Paradise California',
+    album: 'FLAC Mellow Mix Lossless',
+    url: 'https://stream.radioparadise.com/mellow-flac',
+    albumArtUrl: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=500&auto=format&fit=crop&q=80',
+    genre: 'Mellow / Acoustic',
+    quality: 'FLAC Lossless · DSP Ready',
+  },
+  {
+    title: 'TSF Jazz 192k (Paris Live)',
+    artist: 'TSF Jazz Paris',
+    album: 'High Bitrate Jazz Broadcast',
+    url: 'https://tsfjazz.ice.infomaniak.ch/tsfjazz-high.mp3',
+    albumArtUrl: 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?w=500&auto=format&fit=crop&q=80',
+    genre: 'Live Jazz',
+    quality: 'MP3 192 kbps High Quality',
+  },
+  {
+    title: 'WQXR New York (Classical 24/7)',
+    artist: 'WQXR New York Public Radio',
+    album: 'Classical Live Broadcast',
+    url: 'https://stream.wqxr.org/wqxr-web',
+    albumArtUrl: 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=500&auto=format&fit=crop&q=80',
+    genre: 'Live Classical',
+    quality: 'AAC/MP3 Web Stream',
+  },
+  {
+    title: 'BR Klassik (Bavarian Classical)',
+    artist: 'Bayerischer Rundfunk',
+    album: 'Classical Live Broadcast',
+    url: 'https://dispatcher.rndfnk.com/br/brklassik/live/mp3/mid',
+    albumArtUrl: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=500&auto=format&fit=crop&q=80',
+    genre: 'Live Classical',
+    quality: 'MP3 128 kbps',
+  },
 ];
 
 const COMMON_UPNP_PATHS = [
