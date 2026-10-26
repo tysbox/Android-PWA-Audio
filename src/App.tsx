@@ -335,6 +335,15 @@ export const App: React.FC = () => {
     setIsUsbConnected(audioEngine.isUsbDacConnected);
   }, []);
 
+  // PWA: Initialize audio engine on mount (lazy init in native)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      audioEngine.initAudioContext().catch((e) => {
+        console.error('[App] PWA audio engine init failed:', e);
+      });
+    }
+  }, []);
+
   // Sync DSP parameters to AudioEngine
   useEffect(() => {
     audioEngine.updateDspParams({

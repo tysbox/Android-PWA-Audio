@@ -2,6 +2,7 @@
  * Biscene PWA Web Audio Engine.
  * Complete DSP chain mirroring native C++ V6.5 G1/G2.
  * Runs entirely in AudioWorklet for real-time performance on PWA / Browser.
+ * Includes robust fallback to direct HTMLAudioElement playback if Worklet fails.
  */
 
 import type { HeadphoneProfile } from '../types';
@@ -54,6 +55,7 @@ export class WebAudioEngine {
   private resolveWorkletReady!: () => void;
   private rejectWorkletReady!: (reason: Error) => void;
   private initializationError: Error | null = null;
+  private useFallback = false; // true = bypass worklet, direct audioElement -> destination
 
   // Playback state
   private isPlaying = false;
@@ -115,10 +117,12 @@ export class WebAudioEngine {
       this.resolveWorkletReady = resolve;
       this.rejectWorkletReady = reject;
     });
+    console.log('[WebAudioEngine] Constructor done');
   }
 
   /** Alias for App.tsx compatibility */
   async initAudioContext(): Promise<void> {
+    console.log('[WebAudioEngine] initAudioContext() called');
     await this.initialize();
   }
 
@@ -126,34 +130,26 @@ export class WebAudioEngine {
   async initialize(): Promise<void> {
     if (this.audioContext) {
       if (this.audioContext.state === 'suspended') {
+        console.log('[WebAudioEngine] Resuming existing suspended AudioContext...');
         await this.audioContext.resume();
       }
       if (this.initializationError) throw this.initializationError;
+      console.log('[WebAudioEngine] Already initialized');
       return;
     }
 
+    console.log('[WebAudioEngine] Starting initialization...');
+
     try {
-      console.log('[WebAudioEngine] Initializing AudioContext...');
+      // 1. Create AudioContext
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       this.audioContext = new AudioContextClass({ sampleRate: 48000 });
-      console.log('[WebAudioEngine] AudioContext created, sampleRate:', this.audioContext.sampleRate);
+      console.log('[WebAudioEngine] AudioContext created, sampleRate:', this.audioContext.sampleRate, 'state:', this.audioContext.state);
 
-      // Load worklet module
-      console.log('[WebAudioEngine] Loading worklet module /dsp-processor.js...');
-      await this.audioContext.audioWorklet.addModule('/dsp-processor.js');
-      console.log('[WebAudioEngine] Worklet module loaded');
-
-      this.workletNode = new AudioWorkletNode(this.audioContext, 'dsp-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-      });
-      console.log('[WebAudioEngine] WorkletNode created');
-
-      // Create HTML5 Audio element for media playback
+      // 2. Create HTML5 Audio element
       this.audioElement = new Audio();
-      this.audioElement.crossOrigin = 'anonymous';
       this.audioElement.preload = 'metadata';
+      this.audioElement.crossOrigin = 'anonymous';
 
       this.audioElement.addEventListener('timeupdate', () => {
         if (this.audioElement) {
@@ -163,34 +159,30 @@ export class WebAudioEngine {
       });
 
       this.audioElement.addEventListener('ended', () => {
+        console.log('[WebAudioEngine] AudioElement ended');
         this.isPlaying = false;
         this.onTrackEnded?.();
       });
 
       this.audioElement.addEventListener('error', () => {
-        console.error('[WebAudioEngine] AudioElement error:', this.audioElement?.error);
+        console.error('[WebAudioEngine] AudioElement error:', this.audioElement?.error?.message);
         this.isPlaying = false;
       });
 
       this.audioElement.addEventListener('waiting', () => {
-        console.log('[WebAudioEngine] AudioElement waiting for data...');
+        console.log('[WebAudioEngine] AudioElement waiting...');
       });
 
       this.audioElement.addEventListener('canplay', () => {
-        console.log('[WebAudioEngine] AudioElement canplay');
+        console.log('[WebAudioEngine] AudioElement canplay, readyState:', this.audioElement?.readyState);
       });
 
-      this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement);
-      this.mediaSourceNode.connect(this.workletNode);
-      this.workletNode.connect(this.audioContext.destination);
-      console.log('[WebAudioEngine] Audio graph connected: AudioElement -> MediaElementSource -> Worklet -> Destination');
+      // 3. Try to load and setup AudioWorklet (with fallback)
+      await this.setupWorkletWithFallback();
 
-      // Preload IR assets
-      this.preloadIrs().catch((e) => console.warn('[WebAudioEngine] IR preload warning:', e));
-
+      console.log('[WebAudioEngine] Initialization complete, useFallback:', this.useFallback);
       this.resolveWorkletReady();
-      this.sendParams();
-      console.log('[WebAudioEngine] Initialization complete');
+
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       console.error('[WebAudioEngine] Initialization failed:', err);
@@ -200,7 +192,59 @@ export class WebAudioEngine {
     }
   }
 
-  /** Ensure worklet is ready */
+  /** Setup AudioWorklet with automatic fallback to direct playback on failure */
+  private async setupWorkletWithFallback(): Promise<void> {
+    if (!this.audioContext || !this.audioElement) return;
+
+    try {
+      console.log('[WebAudioEngine] Loading worklet module /dsp-processor.js...');
+      await this.audioContext.audioWorklet.addModule('/dsp-processor.js');
+      console.log('[WebAudioEngine] Worklet module loaded successfully');
+
+      this.workletNode = new AudioWorkletNode(this.audioContext, 'dsp-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      console.log('[WebAudioEngine] AudioWorkletNode created');
+
+      // Connect: audioElement -> mediaSourceNode -> workletNode -> destination
+      this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement!);
+      this.mediaSourceNode.connect(this.workletNode);
+      this.workletNode.connect(this.audioContext.destination);
+      console.log('[WebAudioEngine] Audio graph connected (Worklet mode)');
+
+      // Send initial params
+      this.sendParams();
+
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.warn('[WebAudioEngine] Worklet setup failed, falling back to direct playback:', err);
+      this.initializationError = err;
+      this.useFallback = true;
+
+      // Fallback: direct audioElement -> destination (no DSP)
+      if (this.audioContext && this.audioElement) {
+        try {
+          // Disconnect any existing connections
+          if (this.mediaSourceNode) {
+            this.mediaSourceNode.disconnect();
+          }
+          if (this.workletNode) {
+            this.workletNode.disconnect();
+          }
+          this.mediaSourceNode = this.audioContext.createMediaElementSource(this.audioElement);
+          this.mediaSourceNode.connect(this.audioContext.destination);
+          console.log('[WebAudioEngine] Fallback audio graph connected (Direct mode)');
+        } catch (fallbackErr) {
+          console.error('[WebAudioEngine] Even fallback connection failed:', fallbackErr);
+          throw fallbackErr;
+        }
+      }
+    }
+  }
+
+  /** Ensure worklet is ready (or fallback is active) */
   private async ensureReady(): Promise<void> {
     await this.workletReady;
   }
@@ -289,7 +333,7 @@ export class WebAudioEngine {
   /** Send parameter update to worklet */
   private async sendParams(): Promise<void> {
     await this.ensureReady();
-    if (!this.workletNode) return;
+    if (!this.workletNode || this.useFallback) return;
 
     const payload = this.buildDspPayload();
     this.workletNode.port.postMessage({ type: 'params', payload });
@@ -303,7 +347,7 @@ export class WebAudioEngine {
     console.log('[WebAudioEngine] playTrack:', url);
     await this.initialize();
     if (this.initializationError) throw this.initializationError;
-    if (!this.audioElement || !this.workletNode || !this.audioContext) {
+    if (!this.audioElement || !this.audioContext) {
       throw new Error('[WebAudioEngine] Audio engine not initialized');
     }
 
@@ -319,7 +363,7 @@ export class WebAudioEngine {
       this.pcmPlayedSec = 0;
       this.pcmDuration = 0;
 
-      // Ensure AudioContext is running (user gesture should allow this)
+      // Ensure AudioContext is running (must be in user gesture context)
       if (this.audioContext.state === 'suspended') {
         console.log('[WebAudioEngine] Resuming suspended AudioContext...');
         await this.audioContext.resume();
@@ -328,36 +372,39 @@ export class WebAudioEngine {
       // Wait for enough data to start playback
       await new Promise<void>((resolve, reject) => {
         if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+          console.log('[WebAudioEngine] Already have enough data');
           resolve();
           return;
         }
         const onCanPlay = () => {
+          console.log('[WebAudioEngine] canplay fired');
           this.audioElement!.removeEventListener('canplay', onCanPlay);
           this.audioElement!.removeEventListener('error', onError);
           resolve();
         };
         const onError = () => {
+          const msg = this.audioElement?.error?.message || 'Unknown error';
+          console.error('[WebAudioEngine] AudioElement load error:', msg);
           this.audioElement!.removeEventListener('canplay', onCanPlay);
           this.audioElement!.removeEventListener('error', onError);
-          reject(new Error('AudioElement load error: ' + this.audioElement?.error?.message));
+          reject(new Error('AudioElement load error: ' + msg));
         };
         this.audioElement!.addEventListener('canplay', onCanPlay, { once: true });
         this.audioElement!.addEventListener('error', onError, { once: true });
-        // Timeout after 10 seconds
         setTimeout(() => {
           this.audioElement!.removeEventListener('canplay', onCanPlay);
           this.audioElement!.removeEventListener('error', onError);
-          reject(new Error('AudioElement load timeout'));
+          reject(new Error('AudioElement load timeout (10s)'));
         }, 10000);
       });
 
       console.log('[WebAudioEngine] Starting playback...');
-      await this.audioElement.play();
+      await this.audioElement!.play();
       this.isPlaying = true;
       console.log('[WebAudioEngine] Playback started successfully');
 
       this.onMetadataUpdate?.({
-        format: 'PWA Web Audio',
+        format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
         srcRate: this.audioContext?.sampleRate || 48000,
         srcBits: 24,
         duration: this.audioElement.duration || 0,
@@ -371,6 +418,7 @@ export class WebAudioEngine {
   }
 
   stopAllPlayback(): void {
+    console.log('[WebAudioEngine] stopAllPlayback');
     if (this.audioElement) {
       this.audioElement.pause();
       this.audioElement.currentTime = 0;
@@ -592,7 +640,7 @@ export class WebAudioEngine {
       await this.loadIr(irName);
     }
     for (const [name, data] of this.irCache) {
-      if (this.workletNode) {
+      if (this.workletNode && !this.useFallback) {
         this.workletNode.port.postMessage(
           {
             type: 'ir',
