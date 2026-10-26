@@ -933,8 +933,12 @@ export const App: React.FC = () => {
           const items: TrackItem[] = await Promise.all(
             filesToUse.map(async (f, idx) => {
               let artUrl: string | undefined;
-              try { artUrl = await extractEmbeddedArtUrl(f) || undefined; }
-              catch (e) { console.warn('[App] extractEmbeddedArtUrl error:', e); }
+              try {
+                artUrl = await extractEmbeddedArtUrl(f) || undefined;
+                console.log('[App] Album art extracted for', f.name, ':', artUrl ? 'SUCCESS' : 'NONE');
+              } catch (e) {
+                console.warn('[App] extractEmbeddedArtUrl error for', f.name, ':', e);
+              }
               return {
                 id: `pwa-file-${Date.now()}-${idx}`,
                 title: f.name.replace(/\.[^/.]+$/, ''),
@@ -1069,8 +1073,12 @@ export const App: React.FC = () => {
             filesToProcess.map(async (f, idx) => {
               const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
               let artUrl: string | undefined;
-              try { artUrl = await extractEmbeddedArtUrl(f) || undefined; }
-              catch (e) { console.warn('[App] extractEmbeddedArtUrl error:', e); }
+              try {
+                artUrl = await extractEmbeddedArtUrl(f) || undefined;
+                console.log('[App] Album art extracted for', f.name, ':', artUrl ? 'SUCCESS' : 'NONE');
+              } catch (e) {
+                console.warn('[App] extractEmbeddedArtUrl error for', f.name, ':', e);
+              }
               return {
                 id: `pwa-queue-${Date.now()}-${idx}`,
                 title: f.name.replace(/\.[^/.]+$/, ''),

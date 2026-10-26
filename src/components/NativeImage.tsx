@@ -112,8 +112,10 @@ export const NativeImage: React.FC<NativeImageProps> = ({ src, fallback, lazy = 
     if (lazy && !visible) return; // wait until scrolled into view
 
     const issue = () => {
+      console.log('[NativeImage] src:', src);
       // Safe URLs used directly
       if (src.startsWith('https://') || src.startsWith('data:') || src.startsWith('blob:') || src.includes('127.0.0.1:9600')) {
+        console.log('[NativeImage] Using src directly:', src);
         setDisplaySrc(src);
         return;
       }

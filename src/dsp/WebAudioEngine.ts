@@ -366,36 +366,44 @@ export class WebAudioEngine {
       }
 
       // Wait for metadata to load (duration) and enough data to start playback
+      // For blob URLs, this should be nearly instant
       await new Promise<void>((resolve, reject) => {
         if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && isFinite(this.audioElement!.duration)) {
           console.log('[WebAudioEngine] Already have enough data and duration:', this.audioElement!.duration);
           resolve();
           return;
         }
+        let resolved = false;
+        const tryResolve = () => {
+          if (resolved) return;
+          if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+            resolved = true;
+            console.log('[WebAudioEngine] Ready to play, duration:', this.audioElement!.duration);
+            resolve();
+          }
+        };
         const onLoadedMetadata = () => {
           console.log('[WebAudioEngine] loadedmetadata fired, duration:', this.audioElement!.duration);
           this.audioElement!.removeEventListener('loadedmetadata', onLoadedMetadata);
           this.audioElement!.removeEventListener('error', onError);
-          // Also wait for canplay
-          if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
-            resolve();
-          } else {
-            const onCanPlay = () => {
-              console.log('[WebAudioEngine] canplay fired after loadedmetadata');
-              this.audioElement!.removeEventListener('canplay', onCanPlay);
-              resolve();
-            };
-            this.audioElement!.addEventListener('canplay', onCanPlay, { once: true });
-          }
+          tryResolve();
+        };
+        const onCanPlay = () => {
+          console.log('[WebAudioEngine] canplay fired');
+          this.audioElement!.removeEventListener('canplay', onCanPlay);
+          this.audioElement!.removeEventListener('error', onError);
+          tryResolve();
         };
         const onError = () => {
           const msg = this.audioElement?.error?.message || 'Unknown error';
           console.error('[WebAudioEngine] AudioElement load error:', msg);
           this.audioElement!.removeEventListener('loadedmetadata', onLoadedMetadata);
+          this.audioElement!.removeEventListener('canplay', onCanPlay);
           this.audioElement!.removeEventListener('error', onError);
           reject(new Error('AudioElement load error: ' + msg));
         };
         this.audioElement!.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
+        this.audioElement!.addEventListener('canplay', onCanPlay, { once: true });
         this.audioElement!.addEventListener('error', onError, { once: true });
         setTimeout(() => {
           this.audioElement!.removeEventListener('loadedmetadata', onLoadedMetadata);
