@@ -561,7 +561,27 @@ export class WebAudioEngine {
   /** Search MusicBrainz for a recording */
   private async searchMusicBrainzRecording(artist: string, title: string, album?: string): Promise<any> {
     try {
-      const query = `recording:"${title}" AND artist:"${artist}"${album ? ` AND release:"${album}"` : ''}`;
+      // Clean up title: remove track number prefix (e.g., "01. ", "02. ")
+      const cleanTitle = title.replace(/^\d+[.\s]+/, '').trim();
+
+      // Skip fallback values that won't match anything in MusicBrainz
+      const fallbackArtist = artist === 'ローカルファイル' || artist === 'Local File' || !artist.trim();
+      const fallbackAlbum = album === 'PWA ライブラリ' || album === 'PWA Library' || album === 'PWA キュー' || album === 'PWA Queue' || !album?.trim();
+
+      const cleanArtist = fallbackArtist ? '' : artist;
+      const cleanAlbum = fallbackAlbum ? '' : album;
+
+      // Build query with only meaningful terms
+      const parts = [`recording:"${cleanTitle}"`];
+      if (cleanArtist) parts.push(`artist:"${cleanArtist}"`);
+      if (cleanAlbum) parts.push(`release:"${cleanAlbum}"`);
+
+      if (parts.length === 0) {
+        console.log('[WebAudioEngine] searchMusicBrainzRecording: no valid search terms');
+        return null;
+      }
+
+      const query = parts.join(' AND ');
       const url = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=1`;
       console.log('[WebAudioEngine] searchMusicBrainzRecording: URL=', url);
       const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0 (https://github.com/tysbox/Android-PWA-Audio)' } });

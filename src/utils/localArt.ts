@@ -212,8 +212,73 @@ async function fetchITunesArtwork(artist: string, album: string): Promise<string
   return null;
 }
 
+/** Parse FLAC Vorbis Comment block (type 4) for metadata */
+function parseFlacVorbisComments(data: Uint8Array, dv: DataView, offset: number, length: number): { artist?: string; album?: string; title?: string } {
+  const result: { artist?: string; album?: string; title?: string } = {};
+  let pos = offset;
+  const end = offset + length;
+
+  if (pos + 4 > end) return result;
+  const vendorLen = dv.getUint32(pos, true);
+  pos += 4 + vendorLen; // skip vendor string
+
+  if (pos + 4 > end) return result;
+  const count = dv.getUint32(pos, true);
+  pos += 4;
+
+  for (let i = 0; i < count && pos + 4 <= end; i++) {
+    const l = dv.getUint32(pos, true);
+    pos += 4;
+    if (pos + l > end) break;
+    const comment = data.subarray(pos, pos + l);
+    pos += l;
+
+    const eq = asciiIndex(comment, '=');
+    if (eq < 0) continue;
+    const key = new TextDecoder().decode(comment.subarray(0, eq)).toUpperCase();
+    const value = new TextDecoder().decode(comment.subarray(eq + 1)).trim();
+
+    if (key === 'ARTIST' && !result.artist) result.artist = value;
+    else if (key === 'ALBUM' && !result.album) result.album = value;
+    else if (key === 'TITLE' && !result.title) result.title = value;
+    else if (key === 'ALBUMARTIST' && !result.artist) result.artist = value;
+  }
+  return result;
+}
+
 /** Extract artist/album/title from file using browser's MediaMetadata API (best effort) */
 async function getFileMetadata(file: File): Promise<FileMetadata> {
+  // First, try FLAC Vorbis comments (for .flac files)
+  if (file.name.toLowerCase().endsWith('.flac')) {
+    try {
+      const head = await readSlice(file, 0, 1_048_576);
+      if (head[0] === 0x66 && head[1] === 0x4c && head[2] === 0x61 && head[3] === 0x43) { // fLaC
+        const dv = new DataView(head.buffer as ArrayBuffer, head.byteOffset, head.byteLength);
+        let p = 4;
+        while (p + 4 <= head.length) {
+          const last = (head[p] & 0x80) !== 0;
+          const type = head[p] & 0x7f;
+          const len = (head[p + 1] << 16) | (head[p + 2] << 8) | head[p + 3];
+          if (type === 4 && p + 4 + len <= head.length) { // VORBIS_COMMENT
+            const vorbis = parseFlacVorbisComments(head, dv, p + 4, len);
+            if (vorbis.artist || vorbis.album || vorbis.title) {
+              console.log('[localArt] getFileMetadata: FLAC Vorbis metadata:', vorbis);
+              return {
+                artist: vorbis.artist || '',
+                album: vorbis.album || '',
+                title: vorbis.title || '',
+              };
+            }
+          }
+          p += 4 + len;
+          if (last) break;
+        }
+      }
+    } catch {
+      // Fall through to ID3 parsing
+    }
+  }
+
   // Try to read ID3 tags from the file head (quick scan)
   try {
     const head = await readSlice(file, 0, 786_432);
@@ -268,11 +333,16 @@ export async function extractEmbeddedArtUrl(file: File): Promise<string | null> 
       if (!(head[0] === 0x66 && head[1] === 0x4c && head[2] === 0x61 && head[3] === 0x43)) return null;
       const dv = new DataView(head.buffer as ArrayBuffer, head.byteOffset, head.byteLength);
       let p = 4;
+      let vorbisComments: { artist?: string; album?: string; title?: string } = {};
       while (p + 4 <= head.length) {
         const last = (head[p] & 0x80) !== 0;
         const type = head[p] & 0x7f;
         const len = (head[p + 1] << 16) | (head[p + 2] << 8) | head[p + 3];
         console.log('[localArt] FLAC block:', { type, len, last, position: p });
+        if (type === 4 && p + 4 + len <= head.length) { // VORBIS_COMMENT block
+          vorbisComments = parseFlacVorbisComments(head, dv, p + 4, len);
+          console.log('[localArt] FLAC Vorbis comments parsed:', vorbisComments);
+        }
         if (type === 6 && p + 4 + len <= head.length) {
           const b = p + 4;
           let j = b + 4; // skip picture type (4 bytes)
