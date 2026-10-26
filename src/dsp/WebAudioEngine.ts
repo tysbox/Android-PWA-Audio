@@ -499,8 +499,170 @@ export class WebAudioEngine {
   queueNextTrack(_url: string): void {}
   clearNextTrack(): void {}
 
-  async fetchWiki(_artist: string, _title: string, _album?: string): Promise<any> {
-    return null;
+  /** PWA: Fetch MusicBrainz + Wikipedia metadata (artist bio, album notes, credits, tracklist) */
+  async fetchWiki(artist: string, title: string, album?: string): Promise<any> {
+    if (!artist || !title) return null;
+
+    try {
+      // 1. Search MusicBrainz for recording
+      const recording = await this.searchMusicBrainzRecording(artist, title, album);
+      if (!recording) return null;
+
+      const releaseId = recording.releases?.[0]?.id;
+      const artistId = recording['artist-credit']?.[0]?.artist?.id;
+
+      // 2. Fetch parallel data
+      const [
+        releaseInfo,
+        artistInfo,
+        wikiSummary,
+        wikiTracklist
+      ] = await Promise.all([
+        releaseId ? this.fetchMusicBrainzRelease(releaseId) : Promise.resolve(null),
+        artistId ? this.fetchMusicBrainzArtist(artistId) : Promise.resolve(null),
+        this.fetchWikipediaSummary(artist, album || '', title),
+        releaseId ? this.fetchWikipediaTracklist(artist, album || '') : Promise.resolve(null)
+      ]);
+
+      // 3. Build credits object matching native format
+      const credits: any = {};
+
+      if (wikiSummary) credits.wikiSummary = wikiSummary;
+      if (artistInfo?.bio) credits.artistBio = artistInfo.bio;
+      if (releaseInfo?.disambiguation) credits.albumDisambiguation = releaseInfo.disambiguation;
+      if (releaseInfo?.['annotation']) credits.albumAnnotation = releaseInfo.annotation;
+      if (wikiTracklist) credits.tracklist = wikiTracklist;
+
+      // Production credits from MusicBrainz relationships
+      if (releaseInfo?.relations) {
+        const prodCredits = this.extractProductionCredits(releaseInfo.relations);
+        if (Object.keys(prodCredits).length > 0) {
+          credits.productionCredits = prodCredits;
+        }
+      }
+
+      return { credits };
+    } catch (e) {
+      console.warn('[WebAudioEngine] fetchWiki failed:', e);
+      return null;
+    }
+  }
+
+  /** Search MusicBrainz for a recording */
+  private async searchMusicBrainzRecording(artist: string, title: string, album?: string): Promise<any> {
+    try {
+      const query = `recording:"${title}" AND artist:"${artist}"${album ? ` AND release:"${album}"` : ''}`;
+      const url = `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=1`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0 (https://github.com/tysbox/Android-PWA-Audio)' } });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.recordings?.[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch MusicBrainz release info */
+  private async fetchMusicBrainzRelease(releaseId: string): Promise<any> {
+    try {
+      const url = `https://musicbrainz.org/ws/2/release/${releaseId}?fmt=json&inc=annotations+relations+labels`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0' } });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch MusicBrainz artist info */
+  private async fetchMusicBrainzArtist(artistId: string): Promise<any> {
+    try {
+      const url = `https://musicbrainz.org/ws/2/artist/${artistId}?fmt=json&inc=aliases+tags+ratings`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'BiscenePWA/1.0' } });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch Wikipedia summary (artist bio or album notes) */
+  private async fetchWikipediaSummary(artist: string, album: string, _title: string): Promise<string | null> {
+    try {
+      let resp: Response | null = null;
+      // Try album page first
+      if (album) {
+        const albumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(album)}_(${encodeURIComponent(artist)})`;
+        resp = await fetch(albumUrl);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.extract) return data.extract;
+        }
+      }
+      // Fallback to artist page
+      const artistUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist)}`;
+      resp = await fetch(artistUrl);
+      if (resp?.ok) {
+        const data = await resp.json();
+        return data.extract || null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch Wikipedia tracklist */
+  private async fetchWikipediaTracklist(artist: string, album: string): Promise<string[] | null> {
+    if (!album) return null;
+    try {
+      const url = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(album)}_(${encodeURIComponent(artist)})`;
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      // Simple extraction of tracklist from HTML
+      const trackMatches = html.match(/<td class=\"tracklist[^\"]*\">[^<]*<\/td>/gi);
+      if (trackMatches) {
+        return trackMatches.map(t => t.replace(/<[^>]+>/g, '').trim()).filter(Boolean);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Extract production credits from MusicBrainz relationships */
+  private extractProductionCredits(relations: any[]): Record<string, string> {
+    const credits: Record<string, string> = {};
+    const roleMap: Record<string, string> = {
+      producer: 'Producer',
+      engineer: 'Engineer',
+      mixer: 'Mixing Engineer',
+      mastering: 'Mastering Engineer',
+      songwriter: 'Songwriter',
+      composer: 'Composer',
+      lyricist: 'Lyricist',
+      vocalist: 'Vocals',
+      instrumentalist: 'Instrument',
+      arranger: 'Arranger',
+      'recording engineer': 'Recording Engineer',
+      'mixing engineer': 'Mixing Engineer',
+      'mastering engineer': 'Mastering Engineer',
+    };
+
+    for (const rel of relations) {
+      const type = rel.type?.toLowerCase();
+      const artist = rel.artist?.name;
+      if (!type || !artist) continue;
+
+      const role = roleMap[type] || type;
+      if (credits[role]) {
+        credits[role] += ', ' + artist;
+      } else {
+        credits[role] = artist;
+      }
+    }
+    return credits;
   }
 
   updateDspParams(params: {
