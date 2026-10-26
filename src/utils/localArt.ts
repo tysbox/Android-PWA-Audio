@@ -258,18 +258,31 @@ export async function extractEmbeddedArtUrl(file: File): Promise<string | null> 
         const last = (head[p] & 0x80) !== 0;
         const type = head[p] & 0x7f;
         const len = (head[p + 1] << 16) | (head[p + 2] << 8) | head[p + 3];
+        console.log('[localArt] FLAC block:', { type, len, last, position: p });
         if (type === 6 && p + 4 + len <= head.length) {
           const b = p + 4;
-          let j = b + 4;
+          let j = b + 4; // skip picture type (4 bytes)
           const mL = dv.getUint32(j); j += 4;
+          console.log('[localArt] FLAC PICTURE: mimeLen=', mL, 'pos=', j);
+          if (j + mL > head.length) { console.warn('[localArt] FLAC PICTURE: mimeLen exceeds buffer'); break; }
           const mimeBytes = head.subarray(j, j + mL); j += mL;
           const mimeRaw = new TextDecoder().decode(mimeBytes).toLowerCase();
-          const dL = dv.getUint32(j); j += 4 + dL;
-          j += 16;
+          console.log('[localArt] FLAC PICTURE: mimeRaw=', mimeRaw);
+          if (j + 4 > head.length) { console.warn('[localArt] FLAC PICTURE: no descLen'); break; }
+          const dL = dv.getUint32(j); j += 4;
+          console.log('[localArt] FLAC PICTURE: descLen=', dL, 'pos=', j);
+          if (j + dL > head.length) { console.warn('[localArt] FLAC PICTURE: descLen exceeds buffer'); break; }
+          j += dL; // skip description
+          if (j + 16 > head.length) { console.warn('[localArt] FLAC PICTURE: no dims'); break; }
+          j += 16; // skip width(4) + height(4) + depth(4) + colors(4)
+          if (j + 4 > head.length) { console.warn('[localArt] FLAC PICTURE: no dataLen'); break; }
           const dataLen = dv.getUint32(j); j += 4;
-          const mime = mimeRaw.includes('png') ? 'image/png' : 'image/jpeg';
+          console.log('[localArt] FLAC PICTURE: dataLen=', dataLen, 'pos=', j);
+          if (j + dataLen > head.length) { console.warn('[localArt] FLAC PICTURE: dataLen exceeds buffer'); break; }
+          const mime = mimeRaw.includes('png') ? 'image/png' : (mimeRaw.includes('jpeg') || mimeRaw.includes('jpg') ? 'image/jpeg' : 'image/jpeg');
           const pic = head.slice(j, j + dataLen);
           blob = new Blob([pic as unknown as BlobPart], { type: mime });
+          console.log('[localArt] FLAC PICTURE extracted, size:', pic.length, 'mime:', mime);
           break;
         }
         p += 4 + len;
@@ -301,13 +314,24 @@ export async function extractEmbeddedArtUrl(file: File): Promise<string | null> 
       }
     }
 
-    if (blob) return URL.createObjectURL(blob);
+    if (blob) {
+      console.log('[localArt] blob extracted, returning URL');
+      return URL.createObjectURL(blob);
+    }
 
     // ===== ONLINE FALLBACK: Apple iTunes Search =====
+    console.log('[localArt] No embedded art, trying iTunes fallback...');
     const { artist, album } = await getFileMetadata(file);
+    console.log('[localArt] File metadata:', { artist, album });
     if (artist || album) {
       const artUrl = await fetchITunesArtwork(artist, album);
-      if (artUrl) return artUrl;
+      if (artUrl) {
+        console.log('[localArt] iTunes fallback success:', artUrl);
+        return artUrl;
+      }
+      console.log('[localArt] iTunes fallback returned null');
+    } else {
+      console.log('[localArt] No metadata for iTunes search');
     }
 
     return null;
