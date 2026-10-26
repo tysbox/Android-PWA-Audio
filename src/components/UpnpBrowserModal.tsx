@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { TrackItem } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { NativeImage } from './NativeImage';
@@ -865,6 +866,16 @@ export const UpnpBrowserModal: React.FC<UpnpBrowserModalProps> = ({
           ) : activeTab === 'home' ? (
             /* Home Network Media Servers List */
             <div className="space-y-3">
+              {!Capacitor.isNativePlatform() && (
+                <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl flex items-start gap-2.5 text-amber-200 text-[10.5px] font-mono-tech leading-relaxed">
+                  <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-amber-300">Web PWA環境でのネットワーク接続について</span>
+                    ブラウザ（HTTPS）のセキュリティ制限（暗号化通信規則・UDPソケット非対応）のため、ローカルLAN内のDLNA/UPnPサーバー自動検出は <strong>Android APK実機アプリ限定機能</strong> となります。
+                    Web PWA版では上部タブの <strong>「LIVE STREAMS」</strong> または <strong>「DIRECT URL / IP」</strong> より各ライブストリームやカスタムURL再生をご利用いただけます。
+                  </div>
+                </div>
+              )}
               {/* Top Banner: Auto-Detect Wi-Fi Status */}
               <div className="p-3 bg-neutral-950 border border-emerald-900/60 rounded-xl flex items-center justify-between shadow-inner">
                 <div className="flex items-center gap-2.5 min-w-0">

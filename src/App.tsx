@@ -5,7 +5,7 @@ import { PresetModals } from './components/PresetModals';
 import { WikiModal } from './components/WikiModal';
 import { HeadphoneCalibrationDrawer } from './components/HeadphoneCalibrationDrawer';
 import { QueDrawer } from './components/QueDrawer';
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalBrowserModal } from './components/LocalBrowserModal';
 import { filesToTrackItems, isAudioFile } from './utils/localLibrary';
 import { extractEmbeddedArtUrl } from './utils/localArt';
@@ -887,6 +887,42 @@ export const App: React.FC = () => {
 
   const browseLocal = async () => {
     triggerHaptic('heavy');
+    if (!Capacitor.isNativePlatform()) {
+      // PWA / Web Browser Local File Picker
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = 'audio/*,.mp3,.flac,.wav,.m4a,.aac,.ogg,.dsf,.dff,.opus';
+      input.onchange = (e: any) => {
+        const selectedFiles: File[] = Array.from(e.target?.files || []);
+        const audioFiles = selectedFiles.filter(f => isAudioFile(f));
+        if (audioFiles.length === 0) {
+          alert('選択されたファイルの中に再生可能な音声ファイルが見つかりませんでした。');
+          return;
+        }
+        const items: TrackItem[] = audioFiles.map((f, idx) => {
+          const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
+          return {
+            id: `pwa-file-${Date.now()}-${idx}`,
+            title: f.name.replace(/\.[^/.]+$/, ''),
+            artist: 'ローカルファイル',
+            album: 'PWA ライブラリ',
+            url: URL.createObjectURL(f),
+            format: ext,
+            isLocal: true,
+          };
+        });
+        setPlaylist(items);
+        setCurrentIndex(0);
+        setRendererTrack(null);
+        audioEngine.playTrack(items[0].url);
+        setIsFileActive(true);
+        setIsPaused(false);
+      };
+      input.click();
+      return;
+    }
+
     try {
       // ポップアップなしで直接フォルダ選択を起動
       const res = await DlnaPlayback.pickLocalFolder();
