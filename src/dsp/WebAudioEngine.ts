@@ -56,6 +56,7 @@ export class WebAudioEngine {
   private rejectWorkletReady!: (reason: Error) => void;
   private initializationError: Error | null = null;
   private useFallback = false; // true = bypass worklet, direct audioElement -> destination
+  private lastObjectUrl: string | null = null; // blob URL of current track (for revoke on switch)
 
   // Playback state
   private isPlaying = false;
@@ -348,6 +349,21 @@ export class WebAudioEngine {
     }
 
     try {
+      // === MEMORY HYGIENE: revoke the previous track's blob URL ===
+      // URL.createObjectURL holds a strong reference to the File's memory
+      // until revoked. Without this, every track switch leaks the entire
+      // file's decoded buffer — the reported "playback degrades over time".
+      if (this.lastObjectUrl && this.lastObjectUrl !== url) {
+        try {
+          URL.revokeObjectURL(this.lastObjectUrl);
+          console.log('[WebAudioEngine] Revoked previous blob URL');
+        } catch { /* ignore */ }
+        this.lastObjectUrl = null;
+      }
+      if (url.startsWith('blob:')) {
+        this.lastObjectUrl = url;
+      }
+
       // Handle cross-origin for blob: URLs vs HTTP(S)
       if (url.startsWith('http:') || url.startsWith('https:')) {
         this.audioElement.crossOrigin = 'anonymous';
