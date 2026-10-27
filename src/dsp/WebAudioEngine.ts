@@ -515,7 +515,12 @@ export class WebAudioEngine {
   queueNextTrack(_url: string): void {}
   clearNextTrack(): void {}
 
-  /** PWA: Fetch MusicBrainz + Wikipedia metadata (artist bio, album notes, credits, tracklist) */
+  /** PWA: Fetch MusicBrainz + Wikipedia metadata (artist bio, album notes, credits, tracklist)
+   *  V6.5.3 ALBUM-FIRST (native parity): when the album tag is usable, resolve
+   *  the RELEASE via artist×album search and identify the track from its
+   *  tracklist — recordings[0]-style matching lands on wrong same-title
+   *  albums (log-verified on Android: Skylark). Track search is only the
+   *  fallback when no album tag exists. */
   async fetchWiki(artist: string, title: string, album?: string): Promise<any> {
     console.log('[WebAudioEngine] fetchWiki called:', { artist, title, album });
     if (!artist || !title) {
@@ -523,31 +528,62 @@ export class WebAudioEngine {
       return null;
     }
 
-    try {
-      // 1. Search MusicBrainz for recording
-      console.log('[WebAudioEngine] fetchWiki: searching MusicBrainz recording...');
-      const recording = await this.searchMusicBrainzRecording(artist, title, album);
-      console.log('[WebAudioEngine] fetchWiki: recording result:', recording ? 'FOUND' : 'NOT FOUND');
-      if (!recording) return null;
+    // Sanitize: native MetadataParser.sanitize equivalent — fallback values
+    // and leading track numbers must never reach the query.
+    const cleanArtist = this.sanitizeSearch(artist);
+    const cleanTitle = this.sanitizeSearch(title).replace(/^\d+[.\s]+/, '').trim();
+    const cleanAlbum = this.sanitizeSearch(album || '');
+    const albumUsable = cleanAlbum.length > 0
+      && cleanAlbum !== 'PWA ライブラリ' && cleanAlbum !== 'PWA キュー'
+      && cleanAlbum !== 'PWA Library' && cleanAlbum !== 'PWA Queue';
 
-      const releaseId = recording.releases?.[0]?.id;
-      const artistId = recording['artist-credit']?.[0]?.artist?.id;
-      console.log('[WebAudioEngine] fetchWiki: releaseId=', releaseId, 'artistId=', artistId);
+    try {
+      let recording: any = null;
+      let releaseInfo: any = null;
+
+      if (albumUsable && cleanArtist) {
+        // ---- LAYER A: album×artist release-first (native V6.5.1/6.5.2) ----
+        console.log('[WebAudioEngine] fetchWiki: album-first search:', cleanArtist, '×', cleanAlbum);
+        const releases = await this.searchMusicBrainzReleases(cleanArtist, cleanAlbum);
+        const best = this.pickBestRelease(releases, cleanArtist, cleanAlbum);
+        if (best) {
+          console.log('[WebAudioEngine] fetchWiki: adopted release:', best.title, best.id);
+          releaseInfo = await this.fetchMusicBrainzRelease(best.id);
+          recording = this.findTrackInRelease(releaseInfo, cleanTitle) || null;
+          if (recording) {
+            console.log('[WebAudioEngine] fetchWiki: track identified in release tracklist:', recording.title);
+          }
+        }
+      }
+
+      if (!recording) {
+        // ---- FALLBACK: recording search (no usable album tag) ----
+        console.log('[WebAudioEngine] fetchWiki: recording-first search (no album tag)');
+        recording = await this.searchMusicBrainzRecording(cleanArtist, cleanTitle, albumUsable ? cleanAlbum : '');
+        if (recording) {
+          const relId = recording.releases?.[0]?.id;
+          if (relId && !releaseInfo) {
+            releaseInfo = await this.fetchMusicBrainzRelease(relId);
+          }
+        }
+      }
+
+      if (!recording && !releaseInfo) {
+        console.log('[WebAudioEngine] fetchWiki: no MB match at all');
+        return null;
+      }
+
+      const artistId = recording?.['artist-credit']?.[0]?.artist?.id
+        || (releaseInfo as any)?.['artist-credit']?.[0]?.artist?.id;
+      console.log('[WebAudioEngine] fetchWiki: artistId=', artistId);
 
       // 2. Fetch parallel data
-      console.log('[WebAudioEngine] fetchWiki: fetching parallel data...');
-      const [
-        releaseInfo,
-        artistInfo,
-        wikiSummary,
-        wikiTracklist
-      ] = await Promise.all([
-        releaseId ? this.fetchMusicBrainzRelease(releaseId) : Promise.resolve(null),
+      const [artistInfo, wikiSummary] = await Promise.all([
         artistId ? this.fetchMusicBrainzArtist(artistId) : Promise.resolve(null),
-        this.fetchWikipediaSummary(artist, album || '', title),
-        releaseId ? this.fetchWikipediaTracklist(artist, album || '') : Promise.resolve(null)
+        // Album Notes: artist×album article; fallback to artist article
+        this.fetchWikipediaSummary(cleanArtist, albumUsable ? cleanAlbum : '', cleanTitle),
       ]);
-      console.log('[WebAudioEngine] fetchWiki: parallel results:', { releaseInfo: !!releaseInfo, artistInfo: !!artistInfo, wikiSummary: !!wikiSummary, wikiTracklist: !!wikiTracklist });
+      console.log('[WebAudioEngine] fetchWiki: parallel results:', { artistInfo: !!artistInfo, wikiSummary: !!wikiSummary, releaseInfo: !!releaseInfo });
 
       // 3. Build credits object — MUST match native Android format exactly.
       // Native returns the credits object DIRECTLY (resp.credits), and
@@ -556,20 +592,17 @@ export class WebAudioEngine {
       const credits: any = {};
 
       // Identity from MusicBrainz (recording-level)
-      if (recording.title) credits.trackTitle = recording.title;
-      if (recording['artist-credit']?.[0]?.artist?.name) {
-        credits.artistName = recording['artist-credit'][0].artist.name;
-      }
-      if (recording.length) credits.trackLengthMs = recording.length;
+      if (recording?.title) credits.trackTitle = recording.title;
+      const ac = recording?.['artist-credit'] || (releaseInfo as any)?.['artist-credit'];
+      if (ac?.[0]?.artist?.name) credits.artistName = ac[0].artist.name;
+      if (recording?.length) credits.trackLengthMs = recording.length;
 
       // Wiki data
       if (wikiSummary) credits.wikiSummary = wikiSummary;
       if (artistInfo) {
-        // MusicBrainz artist detail: use 'disambiguation', biography comes from Wikipedia
         if (artistInfo.disambiguation) credits.artistDisambiguation = artistInfo.disambiguation;
-        const artistWikiBio = await this.fetchWikipediaSummary(
-          recording['artist-credit']?.[0]?.artist?.name || artist, '', ''
-        );
+        const artistName = ac?.[0]?.artist?.name || cleanArtist;
+        const artistWikiBio = await this.fetchWikipediaSummary(artistName, '', '');
         if (artistWikiBio) credits.artistBio = artistWikiBio;
         if (artistInfo.country) credits.artistCountry = artistInfo.country;
         if (artistInfo['life-span']?.begin) credits.lifeDates = artistInfo['life-span'].begin;
@@ -583,17 +616,14 @@ export class WebAudioEngine {
         if (releaseInfo.date) {
           credits.releaseDate = releaseInfo.date;
           credits.firstReleaseYear = releaseInfo.date.substring(0, 4);
+          credits.year = releaseInfo.date.substring(0, 4);
         }
         if (releaseInfo.country) credits.releaseCountry = releaseInfo.country;
-        if (releaseInfo.status) credits.releaseMedium = releaseInfo.status;
-        if (releaseInfo['label-info']?.[0]?.label?.name) {
-          credits.label = releaseInfo['label-info'][0].label.name;
-        }
-        if (releaseInfo['catalog-number'] || releaseInfo['label-info']?.[0]?.['catalog-number']) {
-          credits.catalogNumber = releaseInfo['label-info']?.[0]?.['catalog-number'] || '';
-        }
         if (releaseInfo.media?.[0]?.format) credits.releaseMedium = releaseInfo.media[0].format;
         if (releaseInfo.disambiguation) credits.albumDisambiguation = releaseInfo.disambiguation;
+        const li = releaseInfo['label-info']?.[0];
+        if (li?.label?.name) credits.label = li.label.name;
+        if (li?.['catalog-number']) credits.catalogNumber = li['catalog-number'];
       }
 
       // Tracklist from release media
@@ -666,6 +696,94 @@ export class WebAudioEngine {
     }
   }
 
+  /** Sanitize search terms — native MetadataParser.sanitize equivalent:
+   *  strips bracketed junk, [unknown], leading numbers, file extensions. */
+  private sanitizeSearch(s: string): string {
+    if (!s) return '';
+    const lower = s.toLowerCase();
+    if (s.includes('$') || s.includes('%') || lower.includes('unknown') || lower.includes('various')) return '';
+    return s
+      .replace(/\([^)]*\)|\[[^\]]*\]/g, '')
+      .replace(/\[unknown\]/gi, ' ')
+      .replace(/^[0-9\s.-]+/, '')
+      .replace(/\.(dsf|dff|flac|wav|mp3|m4a|aac|ogg|opus)$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** LAYER A (native V6.5.1 parity): artist×album release search, top-N. */
+  private async searchMusicBrainzReleases(artist: string, album: string): Promise<any[]> {
+    try {
+      const query = `artist:"${artist}" AND release:"${album}"`;
+      const url = `https://musicbrainz.org/ws/2/release?query=${encodeURIComponent(query)}&fmt=json&limit=5`;
+      console.log('[WebAudioEngine] searchMusicBrainzReleases: URL=', url);
+      const resp = await fetch(url, { headers: { 'User-Agent': WebAudioEngine.UA } });
+      console.log('[WebAudioEngine] searchMusicBrainzReleases: resp.ok=', resp.ok, 'status=', resp.status);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      const rels = data.releases || [];
+      console.log('[WebAudioEngine] searchMusicBrainzReleases: found', rels.length, 'releases');
+      return rels;
+    } catch (e) {
+      console.error('[WebAudioEngine] searchMusicBrainzReleases error:', e);
+      return [];
+    }
+  }
+
+  /** Native MbMatchScorer equivalent: pick the release whose artist+title
+   *  best match the tags. Score 100 = exact artist & title match. */
+  private pickBestRelease(releases: any[], artist: string, album: string): any | null {
+    if (!releases || releases.length === 0) return null;
+    const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf]/g, '');
+    const na = norm(artist);
+    const nl = norm(album);
+    let best: any = null;
+    let bestScore = -1;
+    for (const rel of releases) {
+      let score = 0;
+      const relArtist = norm(rel['artist-credit']?.[0]?.artist?.name || rel['artist-credit']?.[0]?.name || '');
+      const relTitle = norm(rel.title || '');
+      if (relArtist && relArtist === na) score += 50;
+      else if (relArtist && (relArtist.includes(na) || na.includes(relArtist))) score += 30;
+      if (relTitle && relTitle === nl) score += 50;
+      else if (relTitle && (relTitle.includes(nl) || nl.includes(relTitle))) score += 30;
+      // Prefer releases with date info (more likely the canonical release)
+      if (rel.date) score += 5;
+      if (score > bestScore) { bestScore = score; best = rel; }
+    }
+    if (bestScore < 30) {
+      console.log('[WebAudioEngine] pickBestRelease: best score', bestScore, 'too low — abstaining');
+      return null;
+    }
+    console.log('[WebAudioEngine] pickBestRelease: score', bestScore, '→', best?.title);
+    return best;
+  }
+
+  /** Identify the exact track inside an adopted release's tracklist —
+   *  position match first, then normalized title containment. */
+  private findTrackInRelease(releaseInfo: any, title: string): any | null {
+    if (!releaseInfo?.media) return null;
+    const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf]/g, '');
+    const nt = norm(title);
+    for (const medium of releaseInfo.media) {
+      for (const track of medium.tracks || []) {
+        const tt = norm(track.title || '');
+        if (tt && (tt === nt || tt.includes(nt) || nt.includes(tt))) {
+          // Return a recording-shaped object with artist-credit from the release
+          return {
+            id: track.recording?.id || track.id,
+            title: track.title,
+            length: track.length || track.recording?.length,
+            'artist-credit': track['artist-credit'] || track.recording?.['artist-credit'] || releaseInfo['artist-credit'],
+            relations: track.recording?.relations,
+            releases: [{ id: releaseInfo.id }],
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   /** Fetch MusicBrainz release info — VALID inc params only (annotations is NOT valid for release) */
   private async fetchMusicBrainzRelease(releaseId: string): Promise<any> {
     try {
@@ -723,25 +841,6 @@ export class WebAudioEngine {
       return null;
     } catch (e) {
       console.error('[WebAudioEngine] fetchWikipediaSummary error:', e);
-      return null;
-    }
-  }
-
-  /** Fetch Wikipedia tracklist */
-  private async fetchWikipediaTracklist(artist: string, album: string): Promise<string[] | null> {
-    if (!album) return null;
-    try {
-      const url = `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(album)}_(${encodeURIComponent(artist)})`;
-      const resp = await fetch(url);
-      if (!resp.ok) return null;
-      const html = await resp.text();
-      // Simple extraction of tracklist from HTML
-      const trackMatches = html.match(/<td class=\"tracklist[^\"]*\">[^<]*<\/td>/gi);
-      if (trackMatches) {
-        return trackMatches.map(t => t.replace(/<[^>]+>/g, '').trim()).filter(Boolean);
-      }
-      return null;
-    } catch {
       return null;
     }
   }

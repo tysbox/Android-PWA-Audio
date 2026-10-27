@@ -9,6 +9,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalBrowserModal } from './components/LocalBrowserModal';
 import { filesToTrackItems, isAudioFile } from './utils/localLibrary';
 import { extractEmbeddedArtUrl, extractFileMetadata } from './utils/localArt';
+import { probeSignalTruth, type SignalTruth } from './utils/signalProbe';
 
 const DlnaPlayback = registerPlugin<{
   pickLocalFolder: () => Promise<{ folderName: string; files: { name: string; uri: string }[] }>;
@@ -532,6 +533,17 @@ export const App: React.FC = () => {
       const track = currentPlaylist[index];
       setRendererTrack(null);
       audioEngine.playTrack(track.url);
+      // PWA SIGNAL-FIRST: push the file-probe signal truth immediately so the
+      // Signal tab shows the real format/rate/bits instead of the AudioContext
+      // render rate. Native receives these from the decoder; PWA probes the
+      // file header at pick time (see signalProbe.ts).
+      if (!Capacitor.isNativePlatform() && (track.format || track.sampleRate)) {
+        setRealTimeMeta({
+          format: track.format || '',
+          srcRate: track.sampleRate || 0,
+          srcBits: track.bitDepth || 0,
+        });
+      }
       setIsFileActive(true);
       setIsPaused(false);
       try {
@@ -934,11 +946,14 @@ export const App: React.FC = () => {
             filesToUse.map(async (f, idx) => {
               let artUrl: string | undefined;
               let metadata = { artist: '', album: '', title: '' };
+              let signal: SignalTruth | null = null;
               try {
                 artUrl = await extractEmbeddedArtUrl(f) || undefined;
                 metadata = await extractFileMetadata(f);
+                signal = await probeSignalTruth(f);
                 console.log('[App] Album art extracted for', f.name, ':', artUrl ? 'SUCCESS' : 'NONE');
                 console.log('[App] Metadata extracted for', f.name, ':', metadata);
+                if (signal) console.log('[App] Signal truth for', f.name, ':', signal);
               } catch (e) {
                 console.warn('[App] extractEmbeddedArtUrl error for', f.name, ':', e);
               }
@@ -950,7 +965,9 @@ export const App: React.FC = () => {
                 album: metadata.album || 'PWA ライブラリ',
                 url: URL.createObjectURL(f),
                 albumArtUrl: artUrl,
-                format: f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
+                format: signal?.format || f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
+                sampleRate: signal?.sampleRate || undefined,
+                bitDepth: signal?.bitDepth || undefined,
                 isLocal: true,
               };
             })
@@ -1075,14 +1092,16 @@ export const App: React.FC = () => {
         try {
           const tracks: TrackItem[] = await Promise.all(
             filesToProcess.map(async (f, idx) => {
-              const ext = f.name.split('.').pop()?.toUpperCase() || 'AUDIO';
               let artUrl: string | undefined;
               let metadata = { artist: '', album: '', title: '' };
+              let signal: SignalTruth | null = null;
               try {
                 artUrl = await extractEmbeddedArtUrl(f) || undefined;
                 metadata = await extractFileMetadata(f);
+                signal = await probeSignalTruth(f);
                 console.log('[App] Album art extracted for', f.name, ':', artUrl ? 'SUCCESS' : 'NONE');
                 console.log('[App] Metadata extracted for', f.name, ':', metadata);
+                if (signal) console.log('[App] Signal truth for', f.name, ':', signal);
               } catch (e) {
                 console.warn('[App] extractEmbeddedArtUrl error for', f.name, ':', e);
               }
@@ -1094,7 +1113,9 @@ export const App: React.FC = () => {
                 album: metadata.album || 'PWA キュー',
                 url: URL.createObjectURL(f),
                 albumArtUrl: artUrl,
-                format: ext,
+                format: signal?.format || f.name.split('.').pop()?.toUpperCase() || 'AUDIO',
+                sampleRate: signal?.sampleRate || undefined,
+                bitDepth: signal?.bitDepth || undefined,
                 isLocal: true,
               };
             })
