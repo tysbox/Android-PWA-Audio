@@ -386,10 +386,11 @@ export class WebAudioEngine {
       await new Promise<void>((resolve, reject) => {
         if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && isFinite(this.audioElement!.duration)) {
           console.log('[WebAudioEngine] Already have enough data and duration:', this.audioElement!.duration);
+          // SIGNAL-FIRST: do NOT emit format/srcRate/srcBits here — the real
+          // values are probed from the file header at pick time (signalProbe.ts)
+          // and pushed by App.playTrackAtIndex. Emitting the AudioContext render
+          // rate here would overwrite the probe with 48k/24 for every file.
           this.onMetadataUpdate?.({
-            format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
-            srcRate: this.audioContext?.sampleRate || 48000,
-            srcBits: 24,
             duration: this.audioElement!.duration || 0,
           });
           resolve();
@@ -401,10 +402,8 @@ export class WebAudioEngine {
           if (this.audioElement!.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
             resolved = true;
             console.log('[WebAudioEngine] Ready to play, duration:', this.audioElement!.duration);
+            // SIGNAL-FIRST: no format/srcRate/srcBits — see note above.
             this.onMetadataUpdate?.({
-              format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
-              srcRate: this.audioContext?.sampleRate || 48000,
-              srcBits: 24,
               duration: this.audioElement!.duration || 0,
             });
             resolve();
@@ -414,11 +413,9 @@ export class WebAudioEngine {
           console.log('[WebAudioEngine] loadedmetadata fired, duration:', this.audioElement!.duration);
           this.audioElement!.removeEventListener('loadedmetadata', onLoadedMetadata);
           this.audioElement!.removeEventListener('error', onError);
-          // Immediately notify App of duration so UI doesn't show LIVE
+          // Immediately notify App of duration so UI doesn't show LIVE.
+          // SIGNAL-FIRST: no format/srcRate/srcBits — see note above.
           this.onMetadataUpdate?.({
-            format: 'PWA Web Audio' + (this.useFallback ? ' (Direct)' : ' (Worklet)'),
-            srcRate: this.audioContext?.sampleRate || 48000,
-            srcBits: 24,
             duration: this.audioElement!.duration || 0,
           });
           tryResolve();
