@@ -655,18 +655,16 @@ export class WebAudioEngine {
   /** Shared User-Agent — Wikipedia/MusicBrainz may reject empty/none. */
   private static readonly UA = 'BiscenePWA/1.0 (https://github.com/tysbox/Android-PWA-Audio)';
 
-  /** Search MusicBrainz for a recording (with artist-credit so artistName is available) */
+  /** Search MusicBrainz for a recording (with artist-credit so artistName is available).
+   *  Terms are expected to be already sanitized by fetchWiki (sanitizeSearch);
+   *  only the track-number prefix is stripped here since it's a query-shape
+   *  concern, not a sanitization one. */
   private async searchMusicBrainzRecording(artist: string, title: string, album?: string): Promise<any> {
     try {
       // Clean up title: remove track number prefix (e.g., "01. ", "02. ")
       const cleanTitle = title.replace(/^\d+[.\s]+/, '').trim();
-
-      // Skip fallback values that won't match anything in MusicBrainz
-      const fallbackArtist = artist === 'ローカルファイル' || artist === 'Local File' || !artist.trim();
-      const fallbackAlbum = album === 'PWA ライブラリ' || album === 'PWA Library' || album === 'PWA キュー' || album === 'PWA Queue' || !album?.trim();
-
-      const cleanArtist = fallbackArtist ? '' : artist;
-      const cleanAlbum = fallbackAlbum ? '' : album;
+      const cleanArtist = artist;
+      const cleanAlbum = album;
 
       // Build query with only meaningful terms
       const parts = [`recording:"${cleanTitle}"`];

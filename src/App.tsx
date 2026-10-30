@@ -168,10 +168,18 @@ const resolveStartIndex = (playlist: TrackItem[], fallback: number): number => {
 };
 
 export const App: React.FC = () => {
-  // Audio playback state (queue persisted across restarts)
-  const [playlist, setPlaylist] = useState<TrackItem[]>(() => loadPersistedQueue().playlist);
+  // Audio playback state (queue persisted across restarts).
+  // NOTE: loadPersistedQueue() is intentionally called once and cached in a
+  // ref — it was previously called 3× (twice here + once below) on every
+  // mount, tripling localStorage reads/JSON parses on cold start.
+  const initialQueueRef = useRef<{ playlist: TrackItem[]; currentIndex: number } | null>(null);
+  if (initialQueueRef.current === null) {
+    initialQueueRef.current = loadPersistedQueue();
+  }
+  const initialQueue = initialQueueRef.current;
+  const [playlist, setPlaylist] = useState<TrackItem[]>(() => initialQueue.playlist);
   const [currentIndex, setCurrentIndex] = useState(() =>
-    resolveStartIndex(loadPersistedQueue().playlist, loadPersistedQueue().currentIndex)
+    resolveStartIndex(initialQueue.playlist, initialQueue.currentIndex)
   );
 
   // REP pin UI feedback state
